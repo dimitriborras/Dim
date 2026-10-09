@@ -54,7 +54,7 @@ On avance par étapes. Chaque étape doit laisser le jeu jouable et être testé
    petite tape pour se placer, tir automatique quand la figurine est posée, bouton d'objet unique, trajectoire
    exacte affichée avec ses rebonds, prédiction locale complète, vertical comme format principal, rendu
    mis en cache et résolution adaptative. Reste à faire : boutique en 3 cartes, arènes pensées pour le vertical.
-4. **Micro-jeux à la WarioWare** : rafales de micro-jeux de 4 secondes à un seul geste, avec soit une physique simple
+4. **Micro-jeux à la WarioWare** *(premier lot fait : 8 micro-jeux dans « La Rafale »)* : rafales de micro-jeux de 4 secondes à un seul geste, avec soit une physique simple
    (réflexe, mots, choix), soit la physique de palet (Remonte !, Fige-toi !,
    Pichenette !, Emboîte !, Gonfle !, Range !, Chut !, Attrape !) qui accélèrent, avec des piles en guise de vies.
 5. **Personnage et humour** : chapeaux et accessoires de figurine, émotes et messages rapides, chutes

@@ -93,6 +93,13 @@ export class Renderer {
   updateCamera(map, focus) {
     const pad = 40;
     const visH = (h) => h * TILT + TABLE_T + 70;
+    if (map.compact) {
+      // Petite table : cadrée en entier, centrée.
+      const p0 = map.platforms[0];
+      const scale = Math.min(this.W / (p0.w + 90), this.H / visH(p0.h + 160), 1.6);
+      this.cam = { x: p0.x + p0.w / 2, y: p0.y + p0.h / 2 + 20, scale };
+      return;
+    }
     const fit = Math.min(this.W / (map.width + pad), this.H / visH(map.height + pad));
     // Petit écran (téléphone, vertical ou paysage) : zoom lisible et caméra qui suit le joueur.
     const small = Math.min(this.W, this.H) < 560;
@@ -611,6 +618,16 @@ export class Renderer {
     for (const pr of state.proj) { ctx.moveTo(pr.x + pr.r, pr.y); ctx.arc(pr.x, pr.y, pr.r, 0, 7); }
     for (const pk of state.pickups) { const r = pk.kind === 'crown' ? 20 : 11; ctx.moveTo(pk.x + r, pk.y); ctx.arc(pk.x, pk.y, r, 0, 7); }
     ctx.fill();
+    if (state.microTarget) {
+      // Cible du micro-jeu « Dans le cercle ! ».
+      const t = state.microTarget;
+      ctx.fillStyle = 'rgba(255, 210, 61, 0.25)';
+      ctx.strokeStyle = '#ffd23d';
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(t.x, t.y, t.r, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(t.x, t.y, t.r * 0.55, 0, 7); ctx.stroke();
+    }
     const champ = state.players.find((p) => p.id === state.champion && p.s === 'alive');
     if (champ) {
       ctx.strokeStyle = '#ffd23d';

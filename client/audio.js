@@ -66,6 +66,13 @@ export class Sfx {
         this.tone({ f: 1800, f2: 900, d: 0.04, type: 'square', v: Math.min(0.12, 0.03 + ev.power / 8000) });
         this.tone({ noise: true, d: 0.05, v: Math.min(0.1, ev.power / 9000) });
         break;
+      case 'microAnnounce': this.tone({ f: 660, f2: 990, d: 0.12, type: 'square', v: 0.05 }); break;
+      case 'microTap': this.tone({ f: 500 + Math.random() * 300, d: 0.03, type: 'square', v: 0.03 }); break;
+      case 'microWin':
+        this.tone({ f: 784, f2: 1046, d: 0.12, type: 'triangle', v: 0.08 });
+        setTimeout(() => this.tone({ f: 1046, f2: 1568, d: 0.16, type: 'triangle', v: 0.08 }), 110);
+        break;
+      case 'microLose': this.tone({ f: 220, f2: 110, d: 0.3, type: 'sawtooth', v: 0.06 }); break;
       case 'hop': if (mine) this.tone({ f: 520, f2: 760, d: 0.06, type: 'triangle', v: 0.04 }); break;
       case 'thud': this.tone({ f: 260, f2: 120, d: 0.06, type: 'square', v: 0.05 }); break;
       case 'topple': this.tone({ f: 420, f2: 140, d: 0.18, type: 'triangle', v: 0.07 }); break;

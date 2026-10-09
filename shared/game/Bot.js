@@ -30,6 +30,7 @@ export class BotBrain {
     let goal = null;
     if (mode === 'race') goal = this.raceGoal(p, world);
     else if (mode === 'coins') goal = this.coinGoal(p, world);
+    else if (mode === 'micro') goal = this.microGoal(p, world, extra.micro);
     else if (mode === 'safe' || mode === 'lobby') goal = this.rng.next() < (mode === 'lobby' ? 0.25 : 0.12) ? this.wanderGoal(p, world) : null;
     else goal = this.fightGoal(p, world, extra);
     if (!goal) return;
@@ -73,6 +74,17 @@ export class BotBrain {
     if (sim.outcome === 'stop' && world.map.hazardEdges && world.inHazard(sim.end.x, sim.end.y)) return false;
     void reachOrPower;
     return true;
+  }
+
+  // Micro-jeux physiques : viser le centre de la cible, ou pousser le plus proche.
+  microGoal(p, world, hint) {
+    if (!hint) return null;
+    const c = hint.center;
+    const dc = dist(p, c);
+    if (hint.kind === 'circle') return dc > 45 ? { x: c.x, y: c.y } : null;
+    const target = this.nearestEnemy(p, world, 300);
+    if (target && this.rng.next() < 0.6) return { x: target.x, y: target.y, push: true };
+    return dc > 120 ? { x: c.x, y: c.y } : null;
   }
 
   raceGoal(p, world) {

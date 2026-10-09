@@ -95,7 +95,29 @@ export const RACE_TRACK = {
   ],
 };
 
-export const MAPS = { arena: ARENA, race: RACE_TRACK };
+// Petite table des micro-jeux physiques : tout le monde est proche, ça pousse vite.
+export const MICRO_TABLE = {
+  id: 'micro',
+  name: 'Coin du bureau',
+  width: 900,
+  height: 700,
+  follow: false,
+  compact: true, // petite table : toujours cadrée en entier, la caméra ne suit pas
+  platforms: [{ x: 150, y: 130, w: 600, h: 440 }],
+  holes: [],
+  movingPlatforms: [],
+  walls: [],
+  bumpers: [],
+  springs: [],
+  hazardEdges: true,
+  spawns: [
+    { x: 250, y: 220 }, { x: 650, y: 480 }, { x: 650, y: 220 }, { x: 250, y: 480 },
+    { x: 450, y: 200 }, { x: 450, y: 500 }, { x: 230, y: 350 }, { x: 670, y: 350 },
+  ],
+  center: { x: 450, y: 350 },
+};
+
+export const MAPS = { arena: ARENA, race: RACE_TRACK, micro: MICRO_TABLE };
 
 export function movingPlatformRect(mp, time) {
   const t = (Math.sin((time / mp.period) * Math.PI * 2 + mp.phase) + 1) / 2;

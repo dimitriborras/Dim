@@ -165,6 +165,9 @@ export class GameRoom {
         this.match.recordShop(p, res, msg.item);
         break;
       }
+      case 'mg':
+        this.match.minigameInput(p, msg);
+        break;
       case 'cancelBuy':
         this.match.shop.cancel(p);
         break;
@@ -257,6 +260,7 @@ export class GameRoom {
       energy: Math.round((p.energy ?? 0) * 100) / 100,
       respawn: p.state === 'dead' ? Math.max(0, p.respawnAt - t) : 0,
       inMatch: p.inMatch,
+      micro: this.match.minigame?.privateState?.(p.id) ?? null,
       // État physique exact du joueur, pour que son client rejoue ses commandes non confirmées.
       body: {
         seq: p.ackSeq ?? 0,

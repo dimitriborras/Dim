@@ -156,6 +156,7 @@ export class Hud {
     if (inMatch) rows.sort((a, b) => b.pts - a.pts || b.w - a.w || b.k - a.k);
     const extra = (r) => {
       if (m.hud?.kind === 'coins') return `🪙 ${m.hud.scores[r.id] ?? 0}`;
+      if (m.hud?.kind === 'micro') return `⭐ ${m.hud.scores[r.id] ?? 0}`;
       if (m.hud?.kind === 'crown') return `👑 ${(m.hud.held[r.id] ?? 0).toFixed(0)}s`;
       return inMatch ? `${r.pts} pts` : r.host ? '⭐' : '';
     };

@@ -4,6 +4,7 @@ import { Renderer } from './render.js';
 import { Hud } from './hud.js';
 import { Sfx } from './audio.js';
 import { Predictor } from './predict.js';
+import { MicroOverlay } from './micro.js';
 import { INTERP_DELAY_MS } from '../shared/constants.js';
 import { MAPS } from '../shared/maps.js';
 import { simulateFlick } from '../shared/game/movement.js';
@@ -124,6 +125,7 @@ function onSnap(msg) {
   snaps.push(msg);
   if (snaps.length > 30) snaps.shift();
   latest = msg;
+  micro.update(msg);
   if (msg.you?.body) predictor.reconcile(msg.you.body, msg.w.map);
   const players = new Map(msg.roster.map((r) => [r.id, r]));
   for (const ev of msg.ev) {
@@ -147,6 +149,9 @@ const input = new InputController(canvas, {
     if (code === 'KeyB' && down) hud.toggleShop();
     if (code === 'Escape' && down) hud.toggleShop(false);
     if (code === 'KeyM' && down) hud.toast(sfx.toggle() ? 'Son coupé' : 'Son activé');
+    if (code === 'Space' && down && micro.hud?.phase === 'play' && !micro.hud.physics) {
+      micro.stage.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: innerWidth / 2, clientY: innerHeight / 2 }));
+    }
     if (code === 'Tab') { showTable = down; if (latest) hud.renderFullTable(latest, showTable); }
   },
   onPadButton: (i) => {
@@ -230,6 +235,9 @@ function interpolate() {
 }
 
 const predictor = new Predictor();
+// Heure du serveur estimée (même référence que les instantanés) : sert aux micro-jeux de réflexe.
+const serverNow = () => performance.now() / 1000 - (clockOffset ?? 0);
+const micro = new MicroOverlay($('#micro'), { send: (m) => conn?.send(m), serverNow, sfx });
 // Aperçu de la pichenette : simulation exacte (même physique que le serveur) depuis la
 // position affichée, avec les plateformes mobiles à leur position actuelle.
 function trajectory(st, snap) {
@@ -256,6 +264,7 @@ function frame() {
   const frameDt = Math.min(0.1, (nowMs - lastFrame) / 1000);
   lastFrame = nowMs;
   requestAnimationFrame(frame);
+  micro.frame();
   const st = interpolate();
   if (!st || !latest) {
     renderer.ctx.setTransform(renderer.dpr, 0, 0, renderer.dpr, 0, 0);
@@ -278,6 +287,7 @@ function frame() {
     channel: latest.you?.channel,
     energy: predictor.pos ? predictor.energy : latest.you?.energy ?? 0,
     trajectory: trajectory(st, latest),
+    microTarget: m.hud?.kind === 'micro' && m.hud.physics === 'circle' ? { ...MAPS.micro.center, r: m.hud.data?.radius ?? 85 } : null,
     showHp: ['combat', 'finale', 'lobby'].includes(m.phase),
     touch: isTouch,
   };

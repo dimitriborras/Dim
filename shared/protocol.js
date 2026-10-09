@@ -61,6 +61,11 @@ export function parseClientMessage(raw) {
       return { t: 'ping', c: num(msg.c, 0, Number.MAX_SAFE_INTEGER) ?? 0 };
     case 'touch':
       return { t: 'touch', on: msg.on === true };
+    case 'mg': {
+      // Geste de micro-jeu : tape, choix (index), rotation (tours), avec l'instant estimé côté client.
+      if (!['tap', 'choice', 'wind'].includes(msg.k)) return null;
+      return { t: 'mg', k: msg.k, v: num(msg.v, -10, 10) ?? 0, at: num(msg.at, 0, 1e9) };
+    }
     default:
       return null;
   }

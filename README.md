@@ -50,7 +50,7 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   `cloudflared tunnel --url http://localhost:8080`, puis partager l'adresse `https://…` obtenue
   (les WebSocket passent automatiquement en `wss`).
 - **Port déjà utilisé** : `PORT=3000 npm start` (Windows PowerShell : `$env:PORT=3000; npm start`).
-- `npm test` lance les 26 tests (économie, anti-triche, phases, réseau).
+- `npm test` lance les 29 tests (économie, anti-triche, phases, réseau).
 
 - **Créer une salle** : un code à 4 lettres et un lien à partager s'affichent (aucun compte nécessaire).
 - **Rejoindre** : code ou lien `?room=CODE`. En cas de coupure, le client se reconnecte seul
@@ -86,6 +86,12 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
 `résultats + boutique sûre (8 s)` → `combat (35 s)` → `derniers achats (7 s)` → … → `finale (75 s)` →
 `classement final (15 s)` → retour au lobby.
 
+- **La Rafale (micro-jeux à la WarioWare)** : 10 micro-jeux de quelques secondes joués par tous en même temps,
+  qui accélèrent tous les trois ; chaque réussite rapporte un point. Physique simple : *Gonfle !* (taper vite),
+  *Dégaine !* (réflexe sans faux départ), *Couleur !* (couleur de l'encre, pas le mot), *Compte !* (mémoire),
+  *Emboîte !* (bon moment), *Remonte !* (tourner du doigt). Physique de palet : *Dans le cercle !*,
+  *Reste sur la table !*. Les gestes de réflexe sont horodatés à l'heure du serveur pour rester équitables
+  malgré le ping. Ajouter un micro-jeu = ajouter une définition dans `shared/game/minigames/micros.js`.
 - **Mini-jeux** : *Course sur le tapis* (circuit avec trous, ressorts, plateforme mobile ; le pistolet repousse
   sans blesser) et *Ruée sur les jetons* (un tir fait lâcher un jeton). **Finale** : *La couronne*
   (temps de possession, tout l'arsenal autorisé).

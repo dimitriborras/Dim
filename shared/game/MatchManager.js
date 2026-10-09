@@ -9,9 +9,10 @@ import { MinigameRegistry } from './minigames/MinigameRegistry.js';
 import { RaceMinigame } from './minigames/RaceMinigame.js';
 import { CoinRushMinigame } from './minigames/CoinRushMinigame.js';
 import { CrownFinale } from './minigames/CrownFinale.js';
+import { MicroRushMinigame } from './minigames/MicroRushMinigame.js';
 
 export function defaultRegistry() {
-  return new MinigameRegistry().register(RaceMinigame).register(CoinRushMinigame).register(CrownFinale);
+  return new MinigameRegistry().register(RaceMinigame).register(CoinRushMinigame).register(MicroRushMinigame).register(CrownFinale);
 }
 
 const SAFE_RULES = { damage: false, weapons: 'none', items: false, respawn: true, respawnDelay: 1, respawnInvuln: 0.5 };
@@ -243,6 +244,11 @@ export class MatchManager {
     return 'closed';
   }
 
+  // Geste de mini-jeu (tape, choix, rotation…), validé par le mini-jeu lui-même.
+  minigameInput(p, msg) {
+    if ((this.phase === 'minigame' || this.phase === 'finale') && p.inMatch) this.minigame?.input?.(p, msg);
+  }
+
   buy(p, itemId, slot) {
     if (!p.inMatch) return { ok: false, reason: 'Boutique disponible pendant la partie' };
     return this.shop.request(p, itemId, slot, this.shopMode(), this.time);
@@ -256,6 +262,7 @@ export class MatchManager {
       crown: this.minigame?.constructor.id === 'crown'
         ? { holder: this.minigame.holder, pos: this.minigame.holder ? null : this.minigame.crown }
         : null,
+      micro: this.minigame?.botHint?.() ?? null,
     };
     for (const p of w.players) {
       if (!p.bot) continue;
@@ -315,7 +322,7 @@ export class MatchManager {
   botMode() {
     if (this.phase === 'lobby') return 'lobby';
     if (this.phase === 'combat') return 'combat';
-    if (this.phase === 'minigame' || this.phase === 'finale') return this.minigame.constructor.id;
+    if (this.phase === 'minigame' || this.phase === 'finale') return this.minigame.botMode?.() ?? this.minigame.constructor.id;
     return 'safe';
   }
 
