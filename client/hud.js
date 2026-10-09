@@ -6,7 +6,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const PHASE_LABEL = {
-  lobby: 'Lobby — entraînement libre',
+  lobby: '🎱 Billard libre',
   intro: 'Préparez-vous…',
   minigame: '',
   rewards: 'Résultats & boutique sûre',
@@ -90,8 +90,11 @@ export class Hud {
       case 'elim':
         if (ev.killer === youId) this.announce(`💥 ${plain(ev.victim)} ${ev.cause === 'fall' ? 'poussé dans le vide' : 'K.O.'} !`, 'good');
         else if (ev.victim === youId) this.announce(ev.killer ? `Éliminé par ${plain(ev.killer)}` : ev.cause === 'fall' ? 'Tombé dans le vide…' : 'K.O. !', 'bad');
-        if (ev.killer) this.pushFeed(`${this.name(ev.killer)} ${ev.cause === 'fall' ? '🌀 pousse' : '💥'} ${this.name(ev.victim)}`);
-        else this.pushFeed(`${this.name(ev.victim)} ${ev.cause === 'fall' ? 'tombe dans le vide' : 'est K.O.'}`);
+        {
+          const pool = this.map === 'arena';
+          if (ev.killer) this.pushFeed(`${this.name(ev.killer)} ${ev.cause === 'fall' ? (pool ? '🎱 empoche' : '🌀 pousse') : '💥'} ${this.name(ev.victim)}`);
+          else this.pushFeed(`${this.name(ev.victim)} ${ev.cause === 'fall' ? (pool ? 'tombe dans une poche' : 'tombe dans le vide') : 'est K.O.'}`);
+        }
         break;
       case 'bought': this.pushFeed(`${this.name(ev.id)} achète ${it(ev.item)?.icon ?? ''} ${esc(it(ev.item)?.name ?? '')}`); break;
       case 'points':
@@ -102,6 +105,10 @@ export class Hud {
           this.pushFeed(`💰 +${ev.amount} crédits — ${esc(ev.reason)}`);
           this.announce(`${ev.reason === 'Contrat rempli' ? '📜' : '🎯'} ${esc(ev.reason)}<small>+${ev.amount} crédits</small>`, 'good');
         }
+        break;
+      case 'lobbyPoint':
+        if (ev.id === youId) this.announce(`🎱 ${plain(ev.victim)} empoché !<small>+1 au billard</small>`, 'good');
+        else if (ev.victim === youId) this.announce(`🎱 Empoché par ${plain(ev.id)}`, 'bad');
         break;
       case 'champion':
         this.pushFeed(`🎯 ${this.name(ev.id)} est le champion : bouclier + prime !`);
@@ -121,6 +128,7 @@ export class Hud {
   update(snap, youId) {
     const { m, you } = snap;
     this.roster = new Map(snap.roster.map((r) => [r.id, r]));
+    this.map = snap.w.map;
     this.youId = youId;
     this.isHost = snap.host === youId;
 
@@ -158,7 +166,7 @@ export class Hud {
       if (m.hud?.kind === 'coins') return `🪙 ${m.hud.scores[r.id] ?? 0}`;
       if (m.hud?.kind === 'micro') return `⭐ ${m.hud.scores[r.id] ?? 0}`;
       if (m.hud?.kind === 'crown') return `👑 ${(m.hud.held[r.id] ?? 0).toFixed(0)}s`;
-      return inMatch ? `${r.pts} pts` : r.host ? '⭐' : '';
+      return inMatch ? `${r.pts} pts` : `🎱 ${r.ls ?? 0}${r.host ? ' ⭐' : ''}`;
     };
     const head = inMatch ? `<div class="head"><span>Classement</span><span>${m.hud?.kind === 'coins' ? 'jetons' : m.hud?.kind === 'crown' ? 'couronne' : 'points'}</span></div>` : '<div class="head"><span>Joueurs</span></div>';
     $('#scoreboard').innerHTML = head + rows.map((r) => `
@@ -224,7 +232,7 @@ export class Hud {
         ${solo ? '<p class="hint">La simulation tourne dans votre navigateur avec des bots.</p>' : `<div>Code : <span class="code">${esc(snap.code)}</span></div>
         <div class="row"><input readonly value="${esc(link)}" style="flex:1;min-width:0"><button class="btn small" data-a="copy">Copier le lien</button></div>`}
         <div class="players">${players}</div>
-        <p class="hint">Déplacez-vous et tirez librement pour vous échauffer. ${snap.roster.length}/8 joueurs — 4 à 8 recommandés.</p>
+        <p class="hint">🎱 Billard libre en attendant : pousse les autres dans les poches (+1 chacun). ${snap.roster.length}/8 joueurs — 4 à 8 recommandés.</p>
       </div>
       ${hostCtl}`;
     el.dataset.link = link;
@@ -250,7 +258,8 @@ export class Hud {
       .filter((x) => x && this.items.get(x.id)?.category === 'weapon')
       .map((x) => `<span class="${inv.slots[inv.active]?.id === x.id ? 'on' : ''}" title="${esc(this.items.get(x.id)?.name ?? '')}">${this.items.get(x.id)?.icon ?? '?'}${x.level > 1 ? '<sup>II</sup>' : ''}</span>`)
       .join('');
-    if ($('#gear').innerHTML !== gear) $('#gear').innerHTML = gear;
+    const shownGear = you.inMatch ? gear : '';
+    if ($('#gear').innerHTML !== shownGear) $('#gear').innerHTML = shownGear;
     $('#wallet').innerHTML = you.inMatch ? `💰 ${you.credits}<br>🏆 ${you.points}` : '💰 —<br>🏆 —';
     // Objet utilisable : le gadget s'il en a un, sinon le premier consommable.
     const gadget = inv.slots.find((x) => x && this.items.get(x.id)?.category === 'gadget');

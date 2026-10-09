@@ -269,3 +269,8 @@ body.micro-phys #micro .m-verb { font-size: clamp(22px, 6vw, 40px); }
 body.micro-on #bottom, body.micro-on #feed, body.micro-on #timer, body.micro-on #contract { display: none; }
 #micro[data-phase="result"] .m-stage, #micro[data-phase="announce"] .m-stage { display: none; }
 #micro[data-phase="result"] .m-result { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+/* Lobby réduit en vertical : une simple barre au-dessus des commandes. */
+body.portrait #lobby.collapsed { padding: 8px 10px; bottom: 100px; }
+body.portrait #lobby.collapsed h2 { font-size: 15px; }
+body.portrait #lobby.collapsed .row { margin-top: 4px; gap: 6px; }
+body.portrait #lobby.collapsed .btn { padding: 6px 10px; font-size: 13px; }

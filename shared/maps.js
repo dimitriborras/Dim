@@ -1,43 +1,58 @@
 // Définition des cartes. Le sol est l'union des `platforms`, moins les `holes`,
 // plus les plateformes mobiles. Tout le reste est du vide : y tomber élimine.
 
+// Table de billard : tapis entouré de bandes en bois (qui renvoient), six poches.
+// Plus de vide sur les bords : on ne tombe que dans les poches.
+const FELT = { x: 120, y: 110, w: 1360, h: 780 };
+const CORNER_R = 56;
+const SIDE_R = 46;
+const RAIL = 40;
+const midX = FELT.x + FELT.w / 2;
+
 export const ARENA = {
   id: 'arena',
-  name: 'Table de la chambre',
+  name: 'Le billard',
+  theme: 'pool',
   width: 1600,
   height: 1000,
   follow: false,
-  platforms: [{ x: 120, y: 100, w: 1360, h: 800 }],
-  holes: [{ x: 660, y: 430, w: 280, h: 140 }],
-  movingPlatforms: [
-    { x: 660, y: 440, w: 100, h: 120, axis: 'x', range: 180, period: 5, phase: 0 },
+  felt: FELT,
+  platforms: [FELT],
+  holes: [],
+  pockets: [
+    { x: FELT.x, y: FELT.y, r: CORNER_R },
+    { x: midX, y: FELT.y - 10, r: SIDE_R },
+    { x: FELT.x + FELT.w, y: FELT.y, r: CORNER_R },
+    { x: FELT.x, y: FELT.y + FELT.h, r: CORNER_R },
+    { x: midX, y: FELT.y + FELT.h + 10, r: SIDE_R },
+    { x: FELT.x + FELT.w, y: FELT.y + FELT.h, r: CORNER_R },
   ],
+  movingPlatforms: [],
+  // Bandes (style « rail ») ouvertes devant chaque poche, puis deux cubes de craie pour se couvrir.
   walls: [
-    { x: 300, y: 230, w: 140, h: 36 },
-    { x: 1160, y: 230, w: 140, h: 36 },
-    { x: 300, y: 734, w: 140, h: 36 },
-    { x: 1160, y: 734, w: 140, h: 36 },
-    { x: 782, y: 196, w: 36, h: 124 },
-    { x: 782, y: 680, w: 36, h: 124 },
-    { x: 520, y: 470, w: 36, h: 60 },
-    { x: 1044, y: 470, w: 36, h: 60 },
+    { x: FELT.x + CORNER_R, y: FELT.y - RAIL, w: midX - SIDE_R - FELT.x - CORNER_R, h: RAIL, style: 'rail' },
+    { x: midX + SIDE_R, y: FELT.y - RAIL, w: FELT.x + FELT.w - CORNER_R - midX - SIDE_R, h: RAIL, style: 'rail' },
+    { x: FELT.x + CORNER_R, y: FELT.y + FELT.h, w: midX - SIDE_R - FELT.x - CORNER_R, h: RAIL, style: 'rail' },
+    { x: midX + SIDE_R, y: FELT.y + FELT.h, w: FELT.x + FELT.w - CORNER_R - midX - SIDE_R, h: RAIL, style: 'rail' },
+    { x: FELT.x - RAIL, y: FELT.y + CORNER_R, w: RAIL, h: FELT.h - 2 * CORNER_R, style: 'rail' },
+    { x: FELT.x + FELT.w, y: FELT.y + CORNER_R, w: RAIL, h: FELT.h - 2 * CORNER_R, style: 'rail' },
+    { x: 400, y: 477, w: 46, h: 46, style: 'chalk' },
+    { x: 1154, y: 477, w: 46, h: 46, style: 'chalk' },
   ],
+  // Boules de billard fixes : elles renvoient comme des bumpers.
   bumpers: [
-    { x: 560, y: 320, r: 26 },
-    { x: 1040, y: 320, r: 26 },
-    { x: 560, y: 680, r: 26 },
-    { x: 1040, y: 680, r: 26 },
+    { x: 800, y: 330, r: 26, ball: 8 },
+    { x: 800, y: 670, r: 26, ball: 3 },
+    { x: 560, y: 300, r: 24, ball: 1 },
+    { x: 1040, y: 700, r: 24, ball: 5 },
   ],
-  springs: [
-    { x: 196, y: 470, w: 56, h: 60, dir: 0, power: 820, air: 0.9 },
-    { x: 1348, y: 470, w: 56, h: 60, dir: Math.PI, power: 820, air: 0.9 },
-  ],
-  hazardEdges: true,
+  springs: [],
+  hazardEdges: false,
   spawns: [
-    { x: 230, y: 190 }, { x: 1370, y: 810 }, { x: 1370, y: 190 }, { x: 230, y: 810 },
-    { x: 640, y: 170 }, { x: 960, y: 830 }, { x: 960, y: 170 }, { x: 640, y: 830 },
+    { x: 300, y: 300 }, { x: 1300, y: 700 }, { x: 1300, y: 300 }, { x: 300, y: 700 },
+    { x: 620, y: 200 }, { x: 980, y: 800 }, { x: 980, y: 200 }, { x: 620, y: 800 },
   ],
-  center: { x: 800, y: 380 },
+  center: { x: 800, y: 500 },
 };
 
 export const RACE_TRACK = {
@@ -118,6 +133,21 @@ export const MICRO_TABLE = {
 };
 
 export const MAPS = { arena: ARENA, race: RACE_TRACK, micro: MICRO_TABLE };
+
+// La poche dans laquelle se trouve ce point, ou null.
+export function pocketAt(map, x, y) {
+  for (const pk of map.pockets ?? []) if (Math.hypot(x - pk.x, y - pk.y) < pk.r) return pk;
+  return null;
+}
+
+// Sol sous ce point ? Plateformes mobiles, puis plateformes moins trous et poches.
+export function isGroundAt(map, movers, x, y) {
+  const inR = (r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  for (const r of movers) if (inR(r)) return true;
+  if (!map.platforms.some(inR)) return false;
+  if (map.holes.some(inR)) return false;
+  return !pocketAt(map, x, y);
+}
 
 export function movingPlatformRect(mp, time) {
   const t = (Math.sin((time / mp.period) * Math.PI * 2 + mp.phase) + 1) / 2;

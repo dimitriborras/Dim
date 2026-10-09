@@ -222,7 +222,7 @@ export class GameRoom {
       .map((p) => ({
         id: p.id, name: p.name, color: p.color, bot: !!p.bot, conn: p.connected,
         host: p.id === this.hostId, inMatch: p.inMatch,
-        pts: p.points, cr: p.credits, k: p.stats.kills, d: p.stats.deaths, w: p.stats.wins,
+        pts: p.points, cr: p.credits, ls: p.lobbyScore ?? 0, k: p.stats.kills, d: p.stats.deaths, w: p.stats.wins,
       }));
   }
 

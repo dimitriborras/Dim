@@ -31,7 +31,8 @@ export class BotBrain {
     if (mode === 'race') goal = this.raceGoal(p, world);
     else if (mode === 'coins') goal = this.coinGoal(p, world);
     else if (mode === 'micro') goal = this.microGoal(p, world, extra.micro);
-    else if (mode === 'safe' || mode === 'lobby') goal = this.rng.next() < (mode === 'lobby' ? 0.25 : 0.12) ? this.wanderGoal(p, world) : null;
+    else if (mode === 'safe') goal = this.rng.next() < 0.12 ? this.wanderGoal(p, world) : null;
+    else if (mode === 'lobby') goal = this.rng.next() < 0.5 ? this.poolShot(p, world) ?? this.wanderGoal(p, world) : null;
     else goal = this.fightGoal(p, world, extra);
     if (!goal) return;
     this.launch(p, world, goal);
@@ -45,9 +46,10 @@ export class BotBrain {
       if (this.safe(p, world, base, 0, { hop: true })) p.pendingFlick = { a: base, p: 0, hop: true };
       return;
     }
-    const want = Math.min(1, powerForDistance(goal.push ? d + 160 : d) + this.rng.range(-0.06, 0.06));
-    const tries = [0, 0.18, -0.18, 0.4, -0.4, 0.75, -0.75];
-    for (const scale of [1, 0.75, 0.5]) {
+    const want = goal.power ?? Math.min(1, powerForDistance(goal.push ? d + 160 : d) + this.rng.range(-0.06, 0.06));
+    // Un coup de billard ne se dévie pas : on le joue tel quel ou pas du tout.
+    const tries = goal.exact ? [0] : [0, 0.18, -0.18, 0.4, -0.4, 0.75, -0.75];
+    for (const scale of goal.exact ? [1] : [1, 0.75, 0.5]) {
       const power = Math.max(0, want * scale);
       for (const off of tries) {
         const a = base + off * this.side;
@@ -110,6 +112,35 @@ export class BotBrain {
     return { x: sp.x + this.rng.range(-60, 60), y: sp.y + this.rng.range(-60, 60) };
   }
 
+  // Visée de billard : viser la « bille fantôme » derrière la cible pour l'envoyer dans une poche.
+  poolShot(p, world) {
+    const pockets = world.map.pockets;
+    if (!pockets?.length) return null;
+    const R2 = 2 * PLAYER.radius;
+    let best = null;
+    for (const o of world.players) {
+      if (o === p || o.state !== 'alive' || world.time < o.invulnUntil) continue;
+      for (const pk of pockets) {
+        const tx = pk.x - o.x;
+        const ty = pk.y - o.y;
+        const tl = Math.hypot(tx, ty);
+        if (tl > 520) continue;
+        const ghost = { x: o.x - (tx / tl) * R2, y: o.y - (ty / tl) * R2 };
+        // Angle de coupe : au-delà de ~60°, la cible part trop de travers.
+        const sx = ghost.x - p.x;
+        const sy = ghost.y - p.y;
+        const sl = Math.hypot(sx, sy);
+        const cut = Math.acos(Math.max(-1, Math.min(1, (sx * tx + sy * ty) / (sl * tl))));
+        if (sl < 30 || cut > 1.05 || !world.lineOfSight(p, ghost)) continue;
+        const score = tl + sl * 0.5 + cut * 300;
+        // Puissance : assez pour couvrir la distance jusqu'à la bille fantôme puis envoyer la cible jusqu'à la poche.
+        const power = Math.min(1, powerForDistance(sl + tl * 1.4 / Math.max(0.5, Math.cos(cut)) + 60));
+        if (!best || score < best.score) best = { x: ghost.x, y: ghost.y, push: true, exact: true, power, score, dist: tl };
+      }
+    }
+    return best;
+  }
+
   nearestEnemy(p, world, range = Infinity) {
     let best = null;
     let bestD = range;
@@ -145,6 +176,11 @@ export class BotBrain {
       target = world.players.find((o) => o.id === extra.championId && o.state === 'alive') ?? target;
     }
     if (!target) return this.wanderGoal(p, world);
+    // Sur le billard, une belle occasion d'empocher passe avant tout.
+    if (world.map.pockets?.length && this.rng.next() < 0.5 * this.skill) {
+      const shot = this.poolShot(p, world);
+      if (shot && shot.dist < 380) return shot;
+    }
     const d = dist(p, target) || 1;
     // Cible près du bord ou du trou : on fonce dessus pour la pousser dans le vide.
     const beyond = { x: target.x + ((target.x - p.x) / d) * 120, y: target.y + ((target.y - p.y) / d) * 120 };

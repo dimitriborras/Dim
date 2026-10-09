@@ -76,7 +76,12 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   suit est créditée à l'attaquant. Seul un très gros choc renverse une figurine (0,6 s sans contrôle).
 - **Réactivité** : la physique de sa propre figurine (pichenette, rebonds) est calculée immédiatement sur
   l'appareil puis recalée sur le serveur, même avec du ping (`client/predict.js`, `shared/game/movement.js`).
-- **Diorama** : le bureau d'une chambre d'enfant, la nuit, vu de trois quarts.
+- **Le billard** (lobby, combat, finale) : tapis vert, bandes qui renvoient, six poches. Plus de vide sur
+  les bords : on ne tombe que dans les poches. Pousser un adversaire dans une poche compte comme une
+  élimination ; au lobby (billard libre, sans tir), chaque adversaire empoché rapporte 🎱 +1. Les bots visent
+  comme au billard (bille fantôme derrière la cible, angle de coupe, puissance dosée).
+- **Diorama** : vu de trois quarts, la nuit ; en vertical, la vue pivote d'un quart de tour pour que la table
+  s'affiche dans sa longueur (seul l'affichage pivote, la simulation est la même pour tous).
 - **Performance** : décor dessiné une seule fois, briques, balles, figurines et noms pré-dessinés, résolution
   qui baisse toute seule si l'appareil peine. Objectif : 60 images par seconde sur un téléphone moyen.
 

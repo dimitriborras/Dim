@@ -6,7 +6,7 @@ import { Sfx } from './audio.js';
 import { Predictor } from './predict.js';
 import { MicroOverlay } from './micro.js';
 import { INTERP_DELAY_MS } from '../shared/constants.js';
-import { MAPS } from '../shared/maps.js';
+import { MAPS, isGroundAt } from '../shared/maps.js';
 import { simulateFlick } from '../shared/game/movement.js';
 import { pointInRect } from '../shared/geometry.js';
 import { vibrate } from './settings.js';
@@ -143,6 +143,7 @@ function onSnap(msg) {
 // ------------------------------------------------------------ commandes
 const input = new InputController(canvas, {
   screenToWorld: (sx, sy) => renderer.toWorld(sx, sy),
+  screenDir: (dx, dy) => renderer.screenDirToWorld(dx, dy),
   playerWorld: () => currentState?.players.find((p) => p.id === youId && p.s === 'alive') ?? null,
   onKey: (code, down) => {
     if (!hud) return;
@@ -247,11 +248,7 @@ function trajectory(st, snap) {
   if (!me || me.s !== 'alive') return null;
   const map = MAPS[st.map] ?? MAPS.arena;
   const movers = (st.movers ?? []).map(([x, y], i) => ({ x, y, w: map.movingPlatforms[i]?.w ?? 0, h: map.movingPlatforms[i]?.h ?? 0 }));
-  const isGround = (x, y) => {
-    if (movers.some((r) => pointInRect(x, y, r))) return true;
-    if (!map.platforms.some((r) => pointInRect(x, y, r))) return false;
-    return !map.holes.some((h) => pointInRect(x, y, h));
-  };
+  const isGround = (x, y) => isGroundAt(map, movers, x, y);
   const springAt = (x, y) => map.springs.some((r) => pointInRect(x, y, r));
   const sim = simulateFlick(me, ch.a, ch.p, map, { isGround, stopAt: springAt, factor: snap.you?.body?.sf ?? 1 });
   return { ...sim, angle: ch.a, power: ch.p, ready: (predictor.pos ? predictor.energy : snap.you?.energy ?? 0) >= 1 };
@@ -288,7 +285,7 @@ function frame() {
     energy: predictor.pos ? predictor.energy : latest.you?.energy ?? 0,
     trajectory: trajectory(st, latest),
     microTarget: m.hud?.kind === 'micro' && m.hud.physics === 'circle' ? { ...MAPS.micro.center, r: m.hud.data?.radius ?? 85 } : null,
-    showHp: ['combat', 'finale', 'lobby'].includes(m.phase),
+    showHp: ['combat', 'finale'].includes(m.phase),
     touch: isTouch,
   };
   renderer.draw(currentState);
@@ -296,4 +293,4 @@ function frame() {
 requestAnimationFrame(frame);
 
 // Accès de débogage (console du navigateur) : plasticPanic.conn.room en mode solo.
-window.plasticPanic = { get conn() { return conn; }, get state() { return currentState; } };
+window.plasticPanic = { get conn() { return conn; }, get state() { return currentState; }, renderer };

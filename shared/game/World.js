@@ -2,7 +2,7 @@ import { PLAYER, SHOP } from '../constants.js';
 import {
   pointInRect, resolveCircleRect, circleRectOverlap, segmentRectT, segmentCircleT, angleDiff, dist,
 } from '../geometry.js';
-import { movingPlatformRect } from '../maps.js';
+import { movingPlatformRect, isGroundAt, pocketAt } from '../maps.js';
 import { CombatSystem } from './CombatSystem.js';
 import { InventorySystem } from './InventorySystem.js';
 import { inHazard, glide, collideWalls, collideBumpers, flickSpeed, flingDuration } from './movement.js';
@@ -50,12 +50,7 @@ export class World {
 
   // ---------------------------------------------------------------- terrain
   isGround(x, y) {
-    for (const r of this.movers) if (pointInRect(x, y, r)) return true;
-    let on = false;
-    for (const r of this.map.platforms) if (pointInRect(x, y, r)) { on = true; break; }
-    if (!on) return false;
-    for (const h of this.map.holes) if (pointInRect(x, y, h)) return false;
-    return true;
+    return isGroundAt(this.map, this.movers, x, y);
   }
 
   inHazard(x, y) {
@@ -450,6 +445,13 @@ export class World {
     p.y = Math.max(-200, Math.min(this.map.height + 200, p.y));
     if (this.time >= p.airborneUntil && !this.isGround(p.x, p.y)) {
       if (this.rules.frozen) return;
+      const pk = pocketAt(this.map, p.x, p.y);
+      if (pk) {
+        // Empochée : la figurine file au fond de la poche.
+        p.vx = (pk.x - p.x) * 6;
+        p.vy = (pk.y - p.y) * 6;
+        this.emit('pocket', { id: p.id, x: pk.x, y: pk.y, by: this.time - p.lastHitAt <= PLAYER.killCreditWindow ? p.lastHitBy : null });
+      }
       CombatSystem.startFall(this, p);
     }
   }

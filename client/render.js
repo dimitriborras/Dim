@@ -90,56 +90,92 @@ export class Renderer {
   }
 
   // ------------------------------------------------------------ caméra et projection
+  // Vue tournée d'un quart de tour (téléphone en vertical) : la longueur de la table
+  // s'affiche de haut en bas. Seul l'affichage pivote ; la simulation ne change pas.
+  // Repère de vue : u (horizontal à l'écran), v (profondeur, compressée par TILT).
+  V(x, y) {
+    return this.rot ? { u: y, v: x } : { u: x, v: y };
+  }
+
+  VR(r) {
+    return this.rot ? { x: r.y, y: r.x, w: r.h, h: r.w } : r;
+  }
+
+  viewDims(map) {
+    return this.rot ? { w: map.height, h: map.width } : { w: map.width, h: map.height };
+  }
+
+  // Direction glissée à l'écran (en pixels) -> angle dans le monde.
+  screenDirToWorld(dx, dy) {
+    const du = dx;
+    const dv = dy / TILT;
+    return this.rot ? Math.atan2(du, dv) : Math.atan2(dv, du);
+  }
+
   updateCamera(map, focus) {
+    this.rot = this.H > this.W && !map.follow;
     const pad = 40;
     const visH = (h) => h * TILT + TABLE_T + 70;
+    const dims = this.viewDims(map);
+    const f = focus ? this.V(focus.x, focus.y) : null;
     if (map.compact) {
       // Petite table : cadrée en entier, centrée.
-      const p0 = map.platforms[0];
+      const p0 = this.VR(map.platforms[0]);
       const scale = Math.min(this.W / (p0.w + 90), this.H / visH(p0.h + 160), 1.6);
       this.cam = { x: p0.x + p0.w / 2, y: p0.y + p0.h / 2 + 20, scale };
       return;
     }
-    const fit = Math.min(this.W / (map.width + pad), this.H / visH(map.height + pad));
-    // Petit écran (téléphone, vertical ou paysage) : zoom lisible et caméra qui suit le joueur.
+    const fit = Math.min(this.W / (dims.w + pad), this.H / visH(dims.h + pad));
+    // Petit écran : zoom lisible et caméra qui suit le joueur si la table ne tient pas.
     const small = Math.min(this.W, this.H) < 560;
     let scale = fit;
-    if (map.follow) scale = Math.min(this.H / visH(map.height + pad), this.W / 900);
-    if (small) scale = Math.max(scale, Math.min(this.W / (this.H > this.W ? 600 : 720), this.H / visH(560)));
+    if (map.follow) scale = Math.min(this.H / visH(dims.h + pad), this.W / 900);
+    if (small) scale = Math.max(scale, Math.min(this.W / (this.rot ? 960 : 720), this.H / visH(560)));
     const hx = this.W / 2 / scale;
     const hy = this.H / 2 / (scale * TILT);
-    const following = focus && (scale > fit * 1.02 || map.follow);
-    const tx = following ? clamp(map.follow ? focus.x + 120 : focus.x, hx - 120, map.width - hx + 120) : map.width / 2;
-    const ty = following ? clamp(focus.y, Math.min(map.height / 2, hy - 120), Math.max(map.height / 2, map.height - hy + 160)) : map.height / 2 + 30;
-    const same = Math.abs(this.cam.scale - scale) < 1e-6;
+    const following = f && (scale > fit * 1.02 || map.follow);
+    // Si toute la largeur tient à l'écran, on ne suit que dans la profondeur.
+    const fitsWidth = this.W / scale >= dims.w - 60;
+    const tx = following && !fitsWidth ? clamp(map.follow ? f.u + 120 : f.u, Math.min(dims.w / 2, hx - 120), Math.max(dims.w / 2, dims.w - hx + 120)) : dims.w / 2;
+    const ty = following ? clamp(f.v, Math.min(dims.h / 2, hy - 120), Math.max(dims.h / 2, dims.h - hy + 160)) : dims.h / 2 + 30;
+    const same = Math.abs(this.cam.scale - scale) < 1e-6 && this.cam.rot === this.rot;
     const k = 0.16;
-    this.cam = { x: same ? this.cam.x + (tx - this.cam.x) * k : tx, y: same ? this.cam.y + (ty - this.cam.y) * k : ty, scale };
+    this.cam = { x: same ? this.cam.x + (tx - this.cam.x) * k : tx, y: same ? this.cam.y + (ty - this.cam.y) * k : ty, scale, rot: this.rot };
+  }
+
+  toScreenV(u, v, z = 0) {
+    const { cam } = this;
+    return {
+      x: (u - cam.x) * cam.scale + this.W / 2 + this.shx,
+      y: ((v - cam.y) * TILT - z) * cam.scale + this.H / 2 + this.shy,
+    };
   }
 
   toScreen(x, y, z = 0) {
-    const { cam } = this;
-    return {
-      x: (x - cam.x) * cam.scale + this.W / 2 + this.shx,
-      y: ((y - cam.y) * TILT - z) * cam.scale + this.H / 2 + this.shy,
-    };
+    const q = this.V(x, y);
+    return this.toScreenV(q.u, q.v, z);
   }
 
   toWorld(sx, sy) {
     const { cam } = this;
-    return { x: (sx - this.W / 2) / cam.scale + cam.x, y: (sy - this.H / 2) / (cam.scale * TILT) + cam.y };
+    const u = (sx - this.W / 2) / cam.scale + cam.x;
+    const v = (sy - this.H / 2) / (cam.scale * TILT) + cam.y;
+    return this.rot ? { x: v, y: u } : { x: u, y: v };
   }
 
+  // Direction monde -> angle à l'écran.
   screenAngle(a) {
-    return Math.atan2(Math.sin(a) * TILT, Math.cos(a));
+    const du = this.rot ? Math.sin(a) : Math.cos(a);
+    const dv = this.rot ? Math.cos(a) : Math.sin(a);
+    return Math.atan2(dv * TILT, du);
   }
 
   groundTransform() {
     const { ctx, pr, cam } = this;
-    ctx.setTransform(
-      pr * cam.scale, 0, 0, pr * cam.scale * TILT,
-      pr * (this.W / 2 - cam.x * cam.scale + this.shx),
-      pr * (this.H / 2 - cam.y * cam.scale * TILT + this.shy),
-    );
+    const e = pr * (this.W / 2 - cam.x * cam.scale + this.shx);
+    const f = pr * (this.H / 2 - cam.y * cam.scale * TILT + this.shy);
+    if (this.rot) ctx.setTransform(0, pr * cam.scale * TILT, pr * cam.scale, 0, e, f);
+    else ctx.setTransform(pr * cam.scale, 0, 0, pr * cam.scale * TILT, e, f);
   }
 
   screenTransform() {
@@ -157,8 +193,9 @@ export class Renderer {
 
   // ------------------------------------------------------------ caches
   ensureCaches(map) {
+    this.currentMap = map;
     const s = this.cam.scale;
-    const key = `${map.id}|${s.toFixed(5)}|${this.pr}`;
+    const key = `${map.id}|${s.toFixed(5)}|${this.pr}|${this.rot}`;
     if (this.cache.key === key) return;
     this.cache.key = key;
     this.cache.walls.clear();
@@ -173,16 +210,21 @@ export class Renderer {
   buildStatic(map, s) {
     const X0 = -MARGIN_X;
     const Y0 = -MARGIN_TOP;
-    const wW = map.width + MARGIN_X * 2;
-    const wH = (map.height + MARGIN_TOP + MARGIN_BOTTOM) * TILT + PAD_TOP;
+    const dims = this.viewDims(map);
+    const wW = dims.w + MARGIN_X * 2;
+    const wH = (dims.h + MARGIN_TOP + MARGIN_BOTTOM) * TILT + PAD_TOP;
     let sp = this.pr;
     // Limite mémoire : les très grandes cartes sont dessinées un peu moins finement.
     while (wW * s * sp * wH * s * sp > 14e6 && sp > 0.5) sp -= 0.25;
     const c = makeCanvas(wW * s * sp, wH * s * sp);
     const g = c.getContext('2d', { alpha: false });
     const k = s * sp;
-    const P = (x, y, z = 0) => ({ x: (x - X0) * k, y: ((y - Y0) * TILT - z + PAD_TOP) * k });
-    const ground = () => g.setTransform(k, 0, 0, k * TILT, -X0 * k, (-Y0 * TILT + PAD_TOP) * k);
+    // PV : repère de vue (u, v) ; P : coordonnées du monde ; ground : dessin direct en coordonnées monde.
+    const PV = (u, v, z = 0) => ({ x: (u - X0) * k, y: ((v - Y0) * TILT - z + PAD_TOP) * k });
+    const P = (x, y, z = 0) => { const q = this.V(x, y); return PV(q.u, q.v, z); };
+    const ground = () => (this.rot
+      ? g.setTransform(0, k * TILT, k, 0, -X0 * k, (-Y0 * TILT + PAD_TOP) * k)
+      : g.setTransform(k, 0, 0, k * TILT, -X0 * k, (-Y0 * TILT + PAD_TOP) * k));
     const screen = () => g.setTransform(1, 0, 0, 1, 0, 0);
 
     // Parquet de la chambre, loin sous le bureau.
@@ -196,165 +238,289 @@ export class Renderer {
       g.fillStyle = 'rgba(0,0,0,0.25)';
       for (let x = (i * 173 * sp) % (260 * sp); x < c.width; x += 260 * sp) g.fillRect(x, y, 2 * sp, plank - 2 * sp);
     }
-    // Ombre puis tranche avant du plateau.
-    g.fillStyle = 'rgba(0,0,0,0.35)';
-    for (const r of map.platforms) {
-      const a = P(r.x + 30, r.y + 40, -TABLE_T - 40);
-      const b = P(r.x + r.w + 30, r.y + r.h + 40, -TABLE_T - 40);
-      g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
-    }
-    for (const r of map.platforms) {
-      const a = P(r.x, r.y + r.h, 0);
-      const b = P(r.x + r.w, r.y + r.h, -TABLE_T);
-      const gr = g.createLinearGradient(0, a.y, 0, b.y);
-      gr.addColorStop(0, '#9a6a3c');
-      gr.addColorStop(1, '#5a3a1f');
-      g.fillStyle = gr;
-      g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
-    }
-    // Plateau en bois.
-    ground();
-    for (const r of map.platforms) {
-      g.fillStyle = '#c8955c';
-      g.fillRect(r.x, r.y, r.w, r.h);
-      g.strokeStyle = 'rgba(110, 70, 30, 0.22)';
-      g.lineWidth = 3;
-      g.beginPath();
-      for (let y = r.y + 26; y < r.y + r.h; y += 52) {
-        g.moveTo(r.x, y);
-        for (let x = r.x; x <= r.x + r.w; x += 80) g.lineTo(x, y + Math.sin((x + y) * 0.013) * 5);
+    if (map.theme === 'pool') this.drawPoolStatic(g, c, P, PV, ground, screen, map);
+    else {
+      // Ombre puis tranche avant du plateau.
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      for (const r0 of map.platforms) {
+        const r = this.VR(r0);
+        const a = PV(r.x + 30, r.y + 40, -TABLE_T - 40);
+        const b = PV(r.x + r.w + 30, r.y + r.h + 40, -TABLE_T - 40);
+        g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
       }
-      g.stroke();
-      g.strokeStyle = '#e2b57f';
-      g.beginPath(); g.moveTo(r.x, r.y + r.h); g.lineTo(r.x + r.w, r.y + r.h); g.stroke();
-    }
-    if (map.hazardEdges) {
-      // Ruban adhésif de chantier au bord du bureau.
-      const b = HAZARD.band;
+      for (const r0 of map.platforms) {
+        const r = this.VR(r0);
+        const a = PV(r.x, r.y + r.h, 0);
+        const b = PV(r.x + r.w, r.y + r.h, -TABLE_T);
+        const gr = g.createLinearGradient(0, a.y, 0, b.y);
+        gr.addColorStop(0, '#9a6a3c');
+        gr.addColorStop(1, '#5a3a1f');
+        g.fillStyle = gr;
+        g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      }
+      // Plateau en bois.
+      ground();
       for (const r of map.platforms) {
-        const strip = (x, y, w, h) => {
-          g.save();
-          g.beginPath(); g.rect(x, y, w, h); g.clip();
-          g.fillStyle = 'rgba(255, 210, 61, 0.5)';
-          g.fillRect(x, y, w, h);
-          g.fillStyle = 'rgba(30, 30, 30, 0.45)';
-          for (let d = -h - w; d < w + h; d += 24) {
-            g.beginPath();
-            g.moveTo(x + d, y); g.lineTo(x + d + 12, y); g.lineTo(x + d + 12 + h, y + h); g.lineTo(x + d + h, y + h);
-            g.closePath(); g.fill();
-          }
-          g.restore();
-        };
-        strip(r.x, r.y, r.w, b);
-        strip(r.x, r.y + r.h - b, r.w, b);
-        strip(r.x, r.y + b, b, r.h - 2 * b);
-        strip(r.x + r.w - b, r.y + b, b, r.h - 2 * b);
+        g.fillStyle = '#c8955c';
+        g.fillRect(r.x, r.y, r.w, r.h);
+        g.strokeStyle = 'rgba(110, 70, 30, 0.22)';
+        g.lineWidth = 3;
+        g.beginPath();
+        for (let y = r.y + 26; y < r.y + r.h; y += 52) {
+          g.moveTo(r.x, y);
+          for (let x = r.x; x <= r.x + r.w; x += 80) g.lineTo(x, y + Math.sin((x + y) * 0.013) * 5);
+        }
+        g.stroke();
+        g.strokeStyle = '#e2b57f';
+        g.beginPath(); g.moveTo(r.x, r.y + r.h); g.lineTo(r.x + r.w, r.y + r.h); g.stroke();
       }
-    }
-    for (const h of map.holes) {
-      g.fillStyle = '#0d0b1c';
-      g.fillRect(h.x, h.y, h.w, h.h);
-    }
-    if (map.checkpoints) {
-      g.setLineDash([12, 10]);
-      g.strokeStyle = 'rgba(61, 139, 255, 0.7)';
-      g.lineWidth = 5;
-      for (const x of map.checkpoints.slice(1)) { g.beginPath(); g.moveTo(x, 100); g.lineTo(x, 600); g.stroke(); }
-      g.setLineDash([]);
-      for (let y = 100; y < 600; y += 20) {
-        for (let i = 0; i < 2; i++) {
-          g.fillStyle = (y / 20 + i) % 2 ? '#111' : '#fff';
-          g.fillRect(map.finishX + i * 20, y, 20, 20);
+      if (map.hazardEdges) {
+        // Ruban adhésif de chantier au bord du bureau.
+        const b = HAZARD.band;
+        for (const r of map.platforms) {
+          const strip = (x, y, w, h) => {
+            g.save();
+            g.beginPath(); g.rect(x, y, w, h); g.clip();
+            g.fillStyle = 'rgba(255, 210, 61, 0.5)';
+            g.fillRect(x, y, w, h);
+            g.fillStyle = 'rgba(30, 30, 30, 0.45)';
+            for (let d = -h - w; d < w + h; d += 24) {
+              g.beginPath();
+              g.moveTo(x + d, y); g.lineTo(x + d + 12, y); g.lineTo(x + d + 12 + h, y + h); g.lineTo(x + d + h, y + h);
+              g.closePath(); g.fill();
+            }
+            g.restore();
+          };
+          strip(r.x, r.y, r.w, b);
+          strip(r.x, r.y + r.h - b, r.w, b);
+          strip(r.x, r.y + b, b, r.h - 2 * b);
+          strip(r.x + r.w - b, r.y + b, b, r.h - 2 * b);
         }
       }
-    }
-    for (const spg of map.springs) {
-      g.fillStyle = '#2f9e5b';
-      g.fillRect(spg.x, spg.y, spg.w, spg.h);
-      g.strokeStyle = '#a6ffcb';
-      g.lineWidth = 3;
-      g.beginPath();
-      for (let i = 0; i < 4; i++) { const yy = spg.y + 10 + i * ((spg.h - 20) / 3); g.moveTo(spg.x + 8, yy); g.lineTo(spg.x + spg.w - 8, yy); }
-      g.stroke();
-      g.save();
-      g.translate(spg.x + spg.w / 2, spg.y + spg.h / 2);
-      g.rotate(spg.dir);
-      g.fillStyle = '#fff';
-      g.beginPath(); g.moveTo(24, 0); g.lineTo(4, -13); g.lineTo(4, 13); g.closePath(); g.fill();
-      g.restore();
-    }
-    // Paroi intérieure des tiroirs (face tournée vers nous).
-    screen();
-    for (const h of map.holes) {
-      const a = P(h.x, h.y, 0);
-      const b = P(h.x + h.w, h.y, -TABLE_T);
-      const gr = g.createLinearGradient(0, a.y, 0, b.y);
-      gr.addColorStop(0, '#6b4524');
-      gr.addColorStop(1, '#2a1a0e');
+      for (const h of map.holes) {
+        g.fillStyle = '#0d0b1c';
+        g.fillRect(h.x, h.y, h.w, h.h);
+      }
+      if (map.checkpoints) {
+        g.setLineDash([12, 10]);
+        g.strokeStyle = 'rgba(61, 139, 255, 0.7)';
+        g.lineWidth = 5;
+        for (const x of map.checkpoints.slice(1)) { g.beginPath(); g.moveTo(x, 100); g.lineTo(x, 600); g.stroke(); }
+        g.setLineDash([]);
+        for (let y = 100; y < 600; y += 20) {
+          for (let i = 0; i < 2; i++) {
+            g.fillStyle = (y / 20 + i) % 2 ? '#111' : '#fff';
+            g.fillRect(map.finishX + i * 20, y, 20, 20);
+          }
+        }
+      }
+      for (const spg of map.springs) {
+        g.fillStyle = '#2f9e5b';
+        g.fillRect(spg.x, spg.y, spg.w, spg.h);
+        g.strokeStyle = '#a6ffcb';
+        g.lineWidth = 3;
+        g.beginPath();
+        for (let i = 0; i < 4; i++) { const yy = spg.y + 10 + i * ((spg.h - 20) / 3); g.moveTo(spg.x + 8, yy); g.lineTo(spg.x + spg.w - 8, yy); }
+        g.stroke();
+        g.save();
+        g.translate(spg.x + spg.w / 2, spg.y + spg.h / 2);
+        g.rotate(spg.dir);
+        g.fillStyle = '#fff';
+        g.beginPath(); g.moveTo(24, 0); g.lineTo(4, -13); g.lineTo(4, 13); g.closePath(); g.fill();
+        g.restore();
+      }
+      // Paroi intérieure des tiroirs (face tournée vers nous).
+      screen();
+      for (const h0 of map.holes) {
+        const h = this.VR(h0);
+        const a = PV(h.x, h.y, 0);
+        const b = PV(h.x + h.w, h.y, -TABLE_T);
+        const gr = g.createLinearGradient(0, a.y, 0, b.y);
+        gr.addColorStop(0, '#6b4524');
+        gr.addColorStop(1, '#2a1a0e');
+        g.fillStyle = gr;
+        g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      }
+      // Lampe de bureau : lumière chaude dans un coin, nuit bleutée ailleurs (intégrée au décor).
+      const lamp = P(map.width * 0.12, map.height * 0.05, 120);
+      const R = Math.max(c.width, c.height) * 0.9;
+      const gr = g.createRadialGradient(lamp.x, lamp.y, R * 0.05, lamp.x, lamp.y, R);
+      gr.addColorStop(0, 'rgba(255, 200, 120, 0.14)');
+      gr.addColorStop(0.45, 'rgba(20, 24, 70, 0.0)');
+      gr.addColorStop(1, 'rgba(8, 10, 40, 0.4)');
       g.fillStyle = gr;
-      g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      g.fillRect(0, 0, c.width, c.height);
     }
-    // Lampe de bureau : lumière chaude dans un coin, nuit bleutée ailleurs (intégrée au décor).
-    const lamp = P(map.width * 0.12, map.height * 0.05, 120);
-    const R = Math.max(c.width, c.height) * 0.9;
-    const gr = g.createRadialGradient(lamp.x, lamp.y, R * 0.05, lamp.x, lamp.y, R);
-    gr.addColorStop(0, 'rgba(255, 200, 120, 0.14)');
-    gr.addColorStop(0.45, 'rgba(20, 24, 70, 0.0)');
-    gr.addColorStop(1, 'rgba(8, 10, 40, 0.4)');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, c.width, c.height);
 
     this.cache.static = c;
     this.cache.sp = sp;
     this.cache.origin = { X0, Y0 };
   }
 
-  wallSprite(w, i) {
+  // Table de billard : cadre en bois, tapis vert, poches, lampe au-dessus du tapis.
+  drawPoolStatic(g, c, P, PV, ground, screen, map) {
+    const f = map.felt;
+    const R = 40; // largeur des bandes
+    const outer = { x: f.x - R, y: f.y - R, w: f.w + 2 * R, h: f.h + 2 * R };
+    const ov = this.VR(outer);
+    screen();
+    g.fillStyle = 'rgba(0,0,0,0.4)';
+    const s0 = PV(ov.x + 40, ov.y + 60, -TABLE_T * 2 - 40);
+    const s1 = PV(ov.x + ov.w + 40, ov.y + ov.h + 60, -TABLE_T * 2 - 40);
+    g.fillRect(s0.x, s0.y, s1.x - s0.x, s1.y - s0.y);
+    // Tranche avant du meuble (plus épais qu'un bureau).
+    const a = PV(ov.x, ov.y + ov.h, 0);
+    const b = PV(ov.x + ov.w, ov.y + ov.h, -TABLE_T * 2);
+    const gr = g.createLinearGradient(0, a.y, 0, b.y);
+    gr.addColorStop(0, '#6a3a1a');
+    gr.addColorStop(1, '#2e170a');
+    g.fillStyle = gr;
+    g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+    ground();
+    g.fillStyle = '#6e3f1e';
+    g.fillRect(outer.x, outer.y, outer.w, outer.h);
+    // Tapis.
+    g.fillStyle = '#17734a';
+    g.fillRect(f.x, f.y, f.w, f.h);
+    const felt = g.createRadialGradient(f.x + f.w / 2, f.y + f.h / 2, 50, f.x + f.w / 2, f.y + f.h / 2, f.w * 0.65);
+    felt.addColorStop(0, 'rgba(120, 230, 160, 0.22)');
+    felt.addColorStop(1, 'rgba(0, 30, 15, 0.35)');
+    g.fillStyle = felt;
+    g.fillRect(f.x, f.y, f.w, f.h);
+    // Ligne de tête et mouches.
+    g.strokeStyle = 'rgba(255,255,255,0.18)';
+    g.lineWidth = 3;
+    g.beginPath(); g.moveTo(f.x + f.w * 0.25, f.y); g.lineTo(f.x + f.w * 0.25, f.y + f.h); g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    for (const sx of [0.25, 0.5, 0.75]) { g.beginPath(); g.arc(f.x + f.w * sx, f.y + f.h / 2, 5, 0, 7); g.fill(); }
+    // Poches : bord en cuir puis trou noir.
+    for (const pk of map.pockets) {
+      g.fillStyle = '#3a2412';
+      g.beginPath(); g.arc(pk.x, pk.y, pk.r + 9, 0, 7); g.fill();
+      g.fillStyle = '#050307';
+      g.beginPath(); g.arc(pk.x, pk.y, pk.r, 0, 7); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.06)';
+      g.beginPath(); g.arc(pk.x - pk.r * 0.25, pk.y - pk.r * 0.3, pk.r * 0.5, 0, 7); g.fill();
+    }
+    // Lampe de billard au-dessus du tapis : lumière chaude au centre, nuit autour.
+    screen();
+    const lamp = P(f.x + f.w / 2, f.y + f.h / 2, 0);
+    const Rl = Math.max(c.width, c.height) * 0.75;
+    const lg = g.createRadialGradient(lamp.x, lamp.y, Rl * 0.08, lamp.x, lamp.y, Rl);
+    lg.addColorStop(0, 'rgba(255, 220, 150, 0.12)');
+    lg.addColorStop(0.5, 'rgba(20, 24, 70, 0.0)');
+    lg.addColorStop(1, 'rgba(8, 10, 40, 0.5)');
+    g.fillStyle = lg;
+    g.fillRect(0, 0, c.width, c.height);
+  }
+
+  wallHeight(w) {
+    return w.style === 'rail' ? 22 : w.style === 'chalk' ? 30 : WALL_H;
+  }
+
+  wallSprite(w0, i) {
     let c = this.cache.walls.get(i);
     if (c) return c;
     const k = this.cam.scale * this.pr;
-    c = makeCanvas(w.w * k + 2, (w.h * TILT + WALL_H) * k + 2);
+    const H = this.wallHeight(w0);
+    const w = { ...this.VR(w0), style: w0.style };
+    c = makeCanvas(w.w * k + 2, (w.h * TILT + H) * k + 2);
     const g = c.getContext('2d');
     g.scale(k, k);
-    const col = WALL_COLORS[i % WALL_COLORS.length];
     const topH = w.h * TILT;
-    g.fillStyle = shade(col, -0.28);
-    g.fillRect(0, topH, w.w, WALL_H);
-    g.fillStyle = 'rgba(255,255,255,0.12)';
-    g.fillRect(0, topH, w.w, 3);
-    g.fillStyle = col;
-    g.fillRect(0, 0, w.w, topH);
-    const step = 22;
-    for (let x = step / 2; x < w.w; x += step) {
-      for (let y = step / 2; y < w.h; y += step) {
-        g.fillStyle = shade(col, -0.18);
-        g.beginPath(); g.ellipse(x, y * TILT + 2, 6.5, 6.5 * TILT, 0, 0, 7); g.fill();
-        g.fillStyle = shade(col, 0.3);
-        g.beginPath(); g.ellipse(x, y * TILT - 1, 6, 6 * TILT, 0, 0, 7); g.fill();
+    if (w.style === 'rail') {
+      // Bande de billard : bois verni, coussin vert côté tapis, mouches en nacre.
+      g.fillStyle = '#4e2a12';
+      g.fillRect(0, topH, w.w, H);
+      g.fillStyle = '#8a5530';
+      g.fillRect(0, 0, w.w, topH);
+      const horizontal = w.w > w.h;
+      const felt = this.currentMap?.felt ? this.VR(this.currentMap.felt) : null;
+      const fc = felt ? { x: felt.x + felt.w / 2, y: felt.y + felt.h / 2 } : { x: 0, y: 0 };
+      g.fillStyle = '#0f5a37';
+      const lip = 10;
+      if (horizontal) {
+        if (w.y < fc.y) g.fillRect(0, topH - lip * TILT, w.w, lip * TILT);
+        else g.fillRect(0, 0, w.w, lip * TILT);
+      } else if (w.x < fc.x) g.fillRect(w.w - lip, 0, lip, topH);
+      else g.fillRect(0, 0, lip, topH);
+      g.fillStyle = '#f2e8d0';
+      const n = Math.max(1, Math.round((horizontal ? w.w : w.h) / 170));
+      for (let j = 1; j <= n; j++) {
+        const t = j / (n + 1);
+        const x = horizontal ? w.w * t : w.w / 2;
+        const y = horizontal ? topH / 2 : topH * t;
+        g.beginPath(); g.ellipse(x, y, 4, 4 * TILT, 0, 0, 7); g.fill();
+      }
+    } else if (w.style === 'chalk') {
+      // Cube de craie bleue.
+      g.fillStyle = '#1f5fbf';
+      g.fillRect(0, topH, w.w, H);
+      g.fillStyle = '#3d8bff';
+      g.fillRect(0, 0, w.w, topH);
+      g.fillStyle = '#7fb3ff';
+      g.beginPath(); g.ellipse(w.w / 2, topH / 2, w.w * 0.28, w.h * 0.28 * TILT, 0, 0, 7); g.fill();
+    } else {
+      const col = WALL_COLORS[i % WALL_COLORS.length];
+      g.fillStyle = shade(col, -0.28);
+      g.fillRect(0, topH, w.w, H);
+      g.fillStyle = 'rgba(255,255,255,0.12)';
+      g.fillRect(0, topH, w.w, 3);
+      g.fillStyle = col;
+      g.fillRect(0, 0, w.w, topH);
+      const step = 22;
+      for (let x = step / 2; x < w.w; x += step) {
+        for (let y = step / 2; y < w.h; y += step) {
+          g.fillStyle = shade(col, -0.18);
+          g.beginPath(); g.ellipse(x, y * TILT + 2, 6.5, 6.5 * TILT, 0, 0, 7); g.fill();
+          g.fillStyle = shade(col, 0.3);
+          g.beginPath(); g.ellipse(x, y * TILT - 1, 6, 6 * TILT, 0, 0, 7); g.fill();
+        }
       }
     }
     this.cache.walls.set(i, c);
     return c;
   }
 
-  bumperSprite(r) {
-    let c = this.cache.bumpers.get(r);
+  // Balle en caoutchouc, ou boule de billard numérotée (`ball`).
+  bumperSprite(r, ball = null) {
+    const key = `${r}|${ball}`;
+    let c = this.cache.bumpers.get(key);
     if (c) return c;
     const k = this.cam.scale * this.pr;
     c = makeCanvas(2 * r * k + 4, 2 * r * k + 4);
     const g = c.getContext('2d');
     g.translate(c.width / 2, c.height / 2);
     g.scale(k, k);
-    const gr = g.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
-    gr.addColorStop(0, '#ffc2cf');
-    gr.addColorStop(0.45, '#ff4d6d');
-    gr.addColorStop(1, '#a3203a');
-    g.fillStyle = gr;
-    g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.75)';
-    g.lineWidth = 3;
-    g.beginPath(); g.ellipse(0, 0, r * 0.98, r * 0.35, 0.3, 0, 7); g.stroke();
-    this.cache.bumpers.set(r, c);
+    if (ball !== null) {
+      const col = { 1: '#f7c51e', 3: '#d8262b', 5: '#f2721c', 8: '#151515' }[ball] ?? '#2f62d9';
+      const gr = g.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
+      gr.addColorStop(0, shade(col.length === 7 ? col : '#151515', 0.5));
+      gr.addColorStop(0.5, col);
+      gr.addColorStop(1, shade(col, -0.45));
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill();
+      g.fillStyle = '#fff';
+      g.beginPath(); g.arc(0, -r * 0.05, r * 0.42, 0, 7); g.fill();
+      g.fillStyle = '#111';
+      g.font = `bold ${Math.round(r * 0.55)}px sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(String(ball), 0, -r * 0.03);
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.beginPath(); g.ellipse(-r * 0.4, -r * 0.5, r * 0.22, r * 0.12, -0.6, 0, 7); g.fill();
+    } else {
+      const gr = g.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
+      gr.addColorStop(0, '#ffc2cf');
+      gr.addColorStop(0.45, '#ff4d6d');
+      gr.addColorStop(1, '#a3203a');
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.75)';
+      g.lineWidth = 3;
+      g.beginPath(); g.ellipse(0, 0, r * 0.98, r * 0.35, 0.3, 0, 7); g.stroke();
+    }
+    this.cache.bumpers.set(key, c);
     return c;
   }
 
@@ -451,7 +617,7 @@ export class Renderer {
         this.flash.set(ev.id, now + 0.09);
         this.kick(ev.id, ev.ax !== null ? Math.sign(ev.x - ev.ax) || 1 : 1, 7);
         if (ev.id === youId) {
-          if (ev.ax !== null) this.dmgDirs.push({ a: Math.atan2((ev.ay - ev.y) * TILT, ev.ax - ev.x), born: now });
+          if (ev.ax !== null) this.dmgDirs.push({ wa: Math.atan2(ev.ay - ev.y, ev.ax - ev.x), born: now });
           this.shake = Math.max(this.shake, 5);
         }
         if (ev.by === youId) this.hitMarkers.push({ x: ev.x, y: ev.y, born: now, kill: false });
@@ -477,6 +643,11 @@ export class Renderer {
         break;
       case 'thud': push({ kind: 'clack', x: ev.x, y: ev.y, life: 0.2, power: 120 }); break;
       case 'topple': push({ kind: 'text', x: ev.x, y: ev.y, text: 'BONK', color: '#ffe066', life: 0.6, size: 15 }); break;
+      case 'pocket':
+        push({ kind: 'ring', x: ev.x, y: ev.y, r: 60, life: 0.4, color: '#ffffff' });
+        push({ kind: 'text', x: ev.x, y: ev.y, text: '🎱 Empoché !', color: '#ffffff', life: 1, size: 18 });
+        if (ev.by === youId) this.hitStopUntil = now + 0.07;
+        break;
       case 'boom':
         push({ kind: 'ring', x: ev.x, y: ev.y, r: ev.r, life: 0.45, color: '#ff6fb5' });
         for (let i = 0; i < 20; i++) push({ kind: 'confetti', x: ev.x, y: ev.y, a: Math.random() * 6.28, s: 120 + Math.random() * 260, life: 0.9, color: WALL_COLORS[i % WALL_COLORS.length] });
@@ -488,7 +659,7 @@ export class Renderer {
         push({ kind: 'ring', x: ev.tx, y: ev.ty, r: 40, life: 0.35, color: '#c45cff' });
         break;
       case 'elim':
-        push({ kind: 'text', x: ev.x, y: ev.y, text: ev.cause === 'fall' ? '💫 CHUTE !' : '💥 K.O. !', color: '#ffd23d', life: 1.1, size: 22 });
+        if (!(ev.cause === 'fall' && this.currentMap?.pockets)) push({ kind: 'text', x: ev.x, y: ev.y, text: ev.cause === 'fall' ? '💫 CHUTE !' : '💥 K.O. !', color: '#ffd23d', life: 1.1, size: 22 });
         for (let i = 0; i < 12; i++) push({ kind: 'confetti', x: ev.x, y: ev.y, a: Math.random() * 6.28, s: 80 + Math.random() * 160, life: 0.7, color: '#ffffff' });
         this.shake = Math.max(this.shake, ev.killer === youId || ev.victim === youId ? 9 : 4);
         if (ev.killer === youId) {
@@ -541,7 +712,7 @@ export class Renderer {
     ctx.fillStyle = '#16142b';
     ctx.fillRect(0, 0, this.W, this.H);
     const st = this.cache.static;
-    const o = this.toScreen(this.cache.origin.X0, this.cache.origin.Y0, PAD_TOP);
+    const o = this.toScreenV(this.cache.origin.X0, this.cache.origin.Y0, PAD_TOP);
     this.blit(st, o.x, o.y, st.width / this.cache.sp, st.height / this.cache.sp);
 
     this.drawMovers(map, state.movers);
@@ -561,14 +732,15 @@ export class Renderer {
 
   updateAnim(p, dt, now) {
     const a = this.animOf(p.id);
-    if (a.x === null || Math.hypot(p.x - a.x, p.y - a.y) > 160) { a.x = p.x; a.y = p.y; a.vx = 0; a.vy = 0; }
-    const nvx = dt > 0 ? (p.x - a.x) / dt : 0;
-    const nvy = dt > 0 ? (p.y - a.y) / dt : 0;
+    const q = this.V(p.x, p.y); // repère de vue : le balancier suit le mouvement à l'écran
+    if (a.x === null || Math.hypot(q.u - a.x, q.v - a.y) > 160) { a.x = q.u; a.y = q.v; a.vx = 0; a.vy = 0; }
+    const nvx = dt > 0 ? (q.u - a.x) / dt : 0;
+    const nvy = dt > 0 ? (q.v - a.y) / dt : 0;
     const ax = dt > 0 ? (nvx - a.vx) / dt : 0;
     a.vx += (nvx - a.vx) * 0.5;
     a.vy += (nvy - a.vy) * 0.5;
-    a.x = p.x;
-    a.y = p.y;
+    a.x = q.u;
+    a.y = q.v;
     const f = p.f || '';
     const toppled = f.includes('k');
     if (toppled && !a.lastFlag.includes('k')) a.toppleDir = Math.sign(a.vx) || (Math.random() < 0.5 ? -1 : 1);
@@ -591,9 +763,10 @@ export class Renderer {
     (movers ?? []).forEach(([x, y], i) => {
       const mp = map.movingPlatforms[i];
       if (!mp) return;
-      const a = this.toScreen(x, y, 0);
-      const b = this.toScreen(x + mp.w, y + mp.h, 0);
-      const c = this.toScreen(x, y + mp.h, -14);
+      const r = this.VR({ x, y, w: mp.w, h: mp.h });
+      const a = this.toScreenV(r.x, r.y, 0);
+      const b = this.toScreenV(r.x + r.w, r.y + r.h, 0);
+      const c = this.toScreenV(r.x, r.y + r.h, -14);
       ctx.fillStyle = '#b8621a';
       ctx.fillRect(a.x, b.y, b.x - a.x, c.y - b.y);
       ctx.fillStyle = '#ffae57';
@@ -647,8 +820,10 @@ export class Renderer {
   drawEnergy(me, energy) {
     const { ctx } = this;
     for (let i = 0; i < PLAYER.energyMax; i++) {
-      const x = me.x + (i - 1) * 16;
-      const y = me.y + 30;
+      const q = this.V(me.x, me.y);
+      const wq = this.rot ? { x: q.v + 30, y: q.u + (i - 1) * 16 } : { x: q.u + (i - 1) * 16, y: q.v + 30 };
+      const x = wq.x;
+      const y = wq.y;
       const fill = clamp(energy - i, 0, 1);
       ctx.fillStyle = 'rgba(0,0,0,0.45)';
       ctx.beginPath(); ctx.arc(x, y, 6.5, 0, 7); ctx.fill();
@@ -707,26 +882,28 @@ export class Renderer {
   // ------------------------------------------------------------ objets en relief, triés par profondeur
   drawSprites(map, state, now) {
     const items = [];
-    map.walls.forEach((w, i) => items.push({ key: w.y + w.h, kind: 0, w, i }));
-    for (const b of map.bumpers) items.push({ key: b.y, kind: 1, b });
-    for (const tr of state.traps) items.push({ key: tr.y - 10, kind: 2, tr });
-    for (const pk of state.pickups) items.push({ key: pk.y, kind: 3, pk });
-    for (const d of state.decoys) items.push({ key: d.y, kind: 4, d });
-    for (const p of state.players) if (p.s !== 'dead') items.push({ key: p.y + (p.s === 'falling' ? 2000 : 0), kind: 5, p });
-    for (const b of state.bombs) items.push({ key: b.y, kind: 6, b });
-    for (const pr of state.proj) items.push({ key: pr.y, kind: 7, pr });
+    // Tri par profondeur dans le repère de vue (v), pour que le plus proche passe devant.
+    const depth = (o) => this.V(o.x, o.y).v;
+    map.walls.forEach((w, i) => { const r = this.VR(w); items.push({ key: r.y + r.h, kind: 0, w, i, r }); });
+    for (const b of map.bumpers) items.push({ key: depth(b), kind: 1, b });
+    for (const tr of state.traps) items.push({ key: depth(tr) - 10, kind: 2, tr });
+    for (const pk of state.pickups) items.push({ key: depth(pk), kind: 3, pk });
+    for (const d of state.decoys) items.push({ key: depth(d), kind: 4, d });
+    for (const p of state.players) if (p.s !== 'dead') items.push({ key: depth(p) + (p.s === 'falling' ? 2000 : 0), kind: 5, p });
+    for (const b of state.bombs) items.push({ key: depth(b), kind: 6, b });
+    for (const pr of state.proj) items.push({ key: depth(pr), kind: 7, pr });
     items.sort((a, b) => a.key - b.key);
     const s = this.cam.scale;
     for (const it of items) {
       switch (it.kind) {
         case 0: {
           const sp = this.wallSprite(it.w, it.i);
-          const o = this.toScreen(it.w.x, it.w.y, WALL_H);
+          const o = this.toScreenV(it.r.x, it.r.y, this.wallHeight(it.w));
           this.blit(sp, o.x, o.y, sp.width / this.pr, sp.height / this.pr);
           break;
         }
         case 1: {
-          const sp = this.bumperSprite(it.b.r);
+          const sp = this.bumperSprite(it.b.r, it.b.ball ?? null);
           const c = this.toScreen(it.b.x, it.b.y, it.b.r * 0.9);
           this.blit(sp, c.x - sp.width / this.pr / 2, c.y - sp.height / this.pr / 2, sp.width / this.pr, sp.height / this.pr);
           break;
@@ -796,7 +973,7 @@ export class Renderer {
     ctx.translate(base.x - ux * rk * 4 * s, base.y - uy * rk * 4 * s);
     ctx.rotate(a.lean);
     ctx.scale(scale * (1 - stretch), scale * (1 + stretch));
-    const facingAway = Math.sin(p.a) < -0.25;
+    const facingAway = (this.rot ? Math.cos(p.a) : Math.sin(p.a)) < -0.25;
     const gun = () => {
       ctx.save();
       ctx.scale(s, s);
@@ -1016,7 +1193,8 @@ export class Renderer {
           const c = this.toScreen(p.x, p.y, 0);
           ctx.strokeStyle = '#ff4d6d';
           ctx.lineWidth = 5;
-          ctx.beginPath(); ctx.ellipse(c.x, c.y, 70 * s, 70 * s * TILT, 0, e.aim - 0.6, e.aim + 0.6); ctx.stroke();
+          const va = this.rot ? Math.atan2(Math.cos(e.aim), Math.sin(e.aim)) : e.aim;
+          ctx.beginPath(); ctx.ellipse(c.x, c.y, 70 * s, 70 * s * TILT, 0, va - 0.6, va + 0.6); ctx.stroke();
           break;
         }
         default: break;
@@ -1043,7 +1221,8 @@ export class Renderer {
         ctx.strokeStyle = `rgba(255, 60, 60, ${0.9 * k})`;
         ctx.lineWidth = 10;
         ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.arc(c.x, c.y, R, d.a - 0.32, d.a + 0.32); ctx.stroke();
+        const da = this.screenAngle(d.wa);
+        ctx.beginPath(); ctx.arc(c.x, c.y, R, da - 0.32, da + 0.32); ctx.stroke();
       }
     }
     if (me) {

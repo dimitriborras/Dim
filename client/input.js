@@ -12,9 +12,11 @@ const TAP_PX = 14; // en dessous : c'est une tape
 const DEAD_PX = 22; // zone morte de la fronde : relâcher ici annule
 
 export class InputController {
-  constructor(canvas, { screenToWorld, playerWorld, onKey, onPadButton }) {
+  constructor(canvas, { screenToWorld, screenDir, playerWorld, onKey, onPadButton }) {
     this.canvas = canvas;
     this.screenToWorld = screenToWorld; // (sx, sy) -> point du sol
+    // (dx, dy) écran -> angle monde (la vue peut être inclinée et tournée en vertical)
+    this.screenDir = screenDir ?? ((dx, dy) => Math.atan2(dy / TILT, dx));
     this.playerWorld = playerWorld; // () -> position monde du joueur local ou null
     this.onKey = onKey;
     this.onPadButton = onPadButton;
@@ -107,7 +109,7 @@ export class InputController {
     if (dist < TAP_PX && performance.now() - d.start < 350) return { tap: true };
     if (dist < DEAD_PX) return { cancel: true };
     // On tire en arrière : la figurine part à l'opposé du glissé.
-    return { a: Math.atan2(-d.dy / TILT, -d.dx), p: Math.min(1, (dist - DEAD_PX) / this.pullRange()) };
+    return { a: this.screenDir(-d.dx, -d.dy), p: Math.min(1, (dist - DEAD_PX) / this.pullRange()) };
   }
 
   // Manette : stick gauche pour la direction, A maintenu pour la puissance, A bref = petit bond.
@@ -118,7 +120,7 @@ export class InputController {
     const pressed = pad.buttons.map((b) => b.pressed || b.value > 0.5);
     const x = pad.axes[0] ?? 0;
     const y = pad.axes[1] ?? 0;
-    if (Math.hypot(x, y) > 0.3) this.lastAngle = Math.atan2(y / TILT, x);
+    if (Math.hypot(x, y) > 0.3) this.lastAngle = this.screenDir(x, y);
     if (pressed[0] && !this.padPrev[0]) this.padHold = { start: performance.now(), a: this.lastAngle };
     if (this.padHold) this.padHold.a = this.lastAngle;
     if (!pressed[0] && this.padPrev[0] && this.padHold) {

@@ -17,7 +17,8 @@ export function defaultRegistry() {
 
 const SAFE_RULES = { damage: false, weapons: 'none', items: false, respawn: true, respawnDelay: 1, respawnInvuln: 0.5 };
 const COMBAT_RULES = { damage: true, weapons: 'all', items: true, respawn: true, respawnDelay: 3, respawnInvuln: 1 };
-const PRACTICE_RULES = { damage: true, weapons: 'all', items: true, respawn: true, respawnDelay: 1.5, respawnInvuln: 1 };
+// Lobby : billard pur (pas de tir), on marque en empochant les autres.
+const PRACTICE_RULES = { damage: false, weapons: 'none', items: false, respawn: true, respawnDelay: 1.2, respawnInvuln: 0.8 };
 
 // Phases de partie : lobby -> [intro -> mini-jeu -> récompenses/boutique -> combat -> derniers achats] x N
 //                    -> intro finale -> finale -> classement -> lobby.
@@ -91,7 +92,14 @@ export class MatchManager {
     }
     this.minigame = null;
     this.round = 0;
-    this.createWorld({ map: ARENA, rules: PRACTICE_RULES, hooks: {} });
+    this.createWorld({ map: ARENA, rules: PRACTICE_RULES, hooks: {
+      onEliminated: (victim, killerId) => {
+        const killer = killerId ? this.room.players.get(killerId) : null;
+        if (!killer) return;
+        killer.lobbyScore = (killer.lobbyScore ?? 0) + 1;
+        this.emit('lobbyPoint', { id: killer.id, victim: victim.id, score: killer.lobbyScore });
+      },
+    } });
     this.phase = 'lobby';
     this.phaseEnd = Infinity;
     this.emit('phase', { phase: 'lobby' });
