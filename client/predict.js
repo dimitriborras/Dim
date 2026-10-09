@@ -33,6 +33,13 @@ export class Predictor {
     input.s = this.seq;
     this.pending.push({ s: this.seq, mx: input.mx, my: input.my });
     if (this.pending.length > 60) this.pending.shift();
+    if (input.fl) {
+      // Pichenette : trajectoire décidée par le serveur (chocs, recharge). On suit le serveur
+      // jusqu'à ce qu'il ait traité cette commande et que le personnage soit de nouveau libre.
+      this.pos = null;
+      this.blockSeq = this.seq;
+      return;
+    }
     if (this.pos) {
       this.prev = { x: this.pos.x, y: this.pos.y };
       this.step(this.pos, input);
@@ -44,7 +51,7 @@ export class Predictor {
   reconcile(body, mapId) {
     this.map = MAPS[mapId] ?? MAPS.arena;
     this.pending = this.pending.filter((c) => c.s > body.seq);
-    if (!body.free) {
+    if (!body.free || body.seq < (this.blockSeq ?? 0)) {
       this.pos = null;
       this.offset = { x: 0, y: 0 };
       return;

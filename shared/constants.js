@@ -16,9 +16,15 @@ export const PLAYER = {
   accel: 2400,
   friction: 10,
   knockbackFriction: 3.2,
-  dashSpeed: 720,
-  dashTime: 0.16,
-  dashCooldown: 4,
+  // Pichenette : on tire l'élastique puis on relâche. `power` va de 0 à 1.
+  flickMinSpeed: 380,
+  flickMaxSpeed: 1020,
+  flickTime: 0.2, // + 0,3 s à pleine puissance : durée pendant laquelle on file sans contrôle
+  flickCooldown: 2.4,
+  // Figurine lestée : au-delà de cette vitesse subie, elle se renverse puis se redresse.
+  toppleSpeed: 560,
+  toppleTime: 0.75,
+  restitution: 0.88, // plastique dur : les chocs entre figurines rebondissent
   respawnDelay: 3,
   spawnInvuln: 1,
   fallTime: 0.45,

@@ -7,6 +7,7 @@ const DEFAULTS = {
   shake: 1, // 0, 0.5 ou 1 : intensité des tremblements de l'écran
   haptics: true, // vibrations (Android)
   leftHanded: false, // inverse les deux sticks tactiles
+  tiltShift: true, // flou de maquette en haut et en bas
   volume: 0.8,
 };
 

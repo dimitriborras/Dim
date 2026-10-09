@@ -195,6 +195,12 @@ export class BotBrain {
     else if (inv.active !== 0 && (inv.active !== gloveIdx || d > 140) && this.rng.next() < 0.1) this.select(p, 0);
     input.fire = d < 650 && this.rng.next() < (practice ? 0.25 : 0.55 + this.skill * 0.3);
 
+    // Pichenette opportuniste : se lancer sur une cible proche, surtout si elle est près du bord.
+    const nearEdge = world.inHazard(target.x, target.y) || !world.isGround(target.x + (target.x - p.x) * 0.5, target.y + (target.y - p.y) * 0.5);
+    if (target.state && d < 280 && t >= (p.flickReadyAt ?? 0) && this.rng.next() < (nearEdge ? 0.08 : 0.015) * this.skill) {
+      p.pendingFlick = { a: Math.atan2(target.y - p.y, target.x - p.x), p: Math.min(1, 0.45 + d / 400) };
+    }
+
     if (practice) return;
     this.useItems(p, world, d, target);
   }

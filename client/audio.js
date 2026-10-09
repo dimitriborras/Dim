@@ -61,6 +61,12 @@ export class Sfx {
       case 'push': if (ev.by === youId) this.tone({ f: 1200, d: 0.04, type: 'triangle', v: 0.03 }); break;
       case 'elim': this.tone({ f: 300, f2: 60, d: 0.35, type: 'sawtooth', v: 0.07 }); break;
       case 'boom': this.tone({ noise: true, d: 0.4, v: 0.14 }); break;
+      case 'flick': this.tone({ f: 160, f2: 620, d: 0.14, type: 'sine', v: 0.08 }); break; // élastique relâché
+      case 'clack': // choc de plastique dur : claquement sec
+        this.tone({ f: 1800, f2: 900, d: 0.04, type: 'square', v: Math.min(0.12, 0.03 + ev.power / 8000) });
+        this.tone({ noise: true, d: 0.05, v: Math.min(0.1, ev.power / 9000) });
+        break;
+      case 'topple': this.tone({ f: 420, f2: 140, d: 0.18, type: 'triangle', v: 0.07 }); break;
       case 'spring': case 'jump': this.tone({ f: 200, f2: 800, d: 0.2, type: 'sine', v: 0.08 }); break;
       case 'bump': this.tone({ f: 500, f2: 250, d: 0.1, type: 'triangle', v: 0.07 }); break;
       case 'coin': if (mine) this.tone({ f: 990, f2: 1480, d: 0.09, type: 'square', v: 0.04 }); break;

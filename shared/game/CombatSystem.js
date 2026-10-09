@@ -27,6 +27,8 @@ export const CombatSystem = {
     const kb = knockback * world.rules.knockbackScale * (world.inHazard(victim.x, victim.y) ? HAZARD.knockbackFactor : 1);
     victim.vx += dirx * kb;
     victim.vy += diry * kb;
+    // Figurine lestée : un coup assez fort la renverse.
+    if (Math.hypot(victim.vx, victim.vy) > PLAYER.toppleSpeed) world.topple(victim);
     if (slow > 0) victim.slowUntil = Math.max(victim.slowUntil, t + slow);
     if (attacker && attacker.id !== victim.id) {
       victim.lastHitBy = attacker.id;
@@ -78,7 +80,7 @@ export const CombatSystem = {
     p.hp = PLAYER.maxHp;
     p.state = 'alive';
     p.invulnUntil = world.time + world.rules.respawnInvuln;
-    p.slowUntil = p.slipUntil = p.airborneUntil = p.bubbleUntil = p.dashUntil = 0;
+    p.slowUntil = p.slipUntil = p.airborneUntil = p.bubbleUntil = p.flingUntil = p.toppleUntil = 0;
     world.emit('respawn', { id: p.id, x: p.x, y: p.y });
   },
 

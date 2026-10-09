@@ -47,15 +47,21 @@ On avance par étapes. Chaque étape doit laisser le jeu jouable et être testé
    - Interface : indicateur de la direction des dégâts, marqueurs de touche, alerte de vie basse, munitions et
      esquive affichées autour du personnage, annonces animées.
    - Sensations : micro-gel à l'impact, flash, recul, éclair au canon, tremblement réglable, poussière, déformation du personnage.
-2. **Personnage et humour** : chapeaux et accessoires de figurine, émotes et messages rapides, chutes
+2. **Physique « culbuto » et diorama** *(fait)* : pichenette élastique qui transmet l'élan, figurines
+   lestées qui se renversent puis se relèvent, chocs de plastique, vue de trois quarts sur le bureau la nuit,
+   effet miniature. Cadre retenu : « la nuit dans la chambre ».
+3. **Micro-jeux à la WarioWare** : rafales de micro-jeux de 4 secondes à un seul geste (Remonte !, Fige-toi !,
+   Pichenette !, Emboîte !, Gonfle !, Range !, Chut !, Attrape !) qui accélèrent, avec des piles en guise de vies.
+4. **Personnage et humour** : chapeaux et accessoires de figurine, émotes et messages rapides, chutes
    comiques, voix « plastique », récompenses de fin de partie (« Plus grosse chute », « Roi de la banane »).
-3. **Mini-jeux** (objectif 8 et plus, en variant compétition, coopération et bluff) : patate chaude,
+5. **Mini-jeux** (objectif 8 et plus, en variant compétition, coopération et bluff) : patate chaude,
    territoire de peinture, sumo sur plateau qui rétrécit, artillerie au tour par tour à la Worms, braquage
-   coopératif à la R.E.P.O. (porter un objet fragile ensemble), manche à imposteur à la Among Us.
-4. **Arènes vivantes** : décor destructible (Worms, Terraria), événements (la table penche, des jouets tombent),
+   coopératif à la R.E.P.O. (porter un objet fragile ensemble), manche à imposteur à la Among Us,
+   « 1, 2, 3… Humain ! », voitures à friction (la pichenette réutilisée), dominos.
+6. **Arènes vivantes** : décor destructible (Worms, Terraria), événements (la table penche, des jouets tombent),
    plusieurs arènes, météo d'arène.
-5. **Méta-progression sans avantage en jeu** : expérience, déblocages cosmétiques, défis quotidiens,
+7. **Méta-progression sans avantage en jeu** : expérience, déblocages cosmétiques, défis quotidiens,
    statistiques, collection façon Stardew.
-6. **Social et partage** : revanche en un clic, spectateurs, salles publiques, meilleur moment rejoué
+8. **Social et partage** : revanche en un clic, spectateurs, salles publiques, meilleur moment rejoué
    à la fin de la partie (le « clip » à partager), installation comme application (PWA).
-7. **Réseau et robustesse** : compensation de latence pour les tirs, tests de charge, observabilité.
+9. **Réseau et robustesse** : compensation de latence pour les tirs, tests de charge, observabilité.

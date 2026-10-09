@@ -158,6 +158,7 @@ export class GameRoom {
         p.input.fire = msg.f;
         if (p.actions.length < 12) p.actions.push(...msg.act);
         if (msg.s !== null) p.inputSeq = msg.s;
+        if (msg.fl) p.pendingFlick = msg.fl;
         break;
       case 'buy': {
         const res = this.match.buy(p, msg.item, msg.slot);
@@ -253,7 +254,7 @@ export class GameRoom {
       inv: InventorySystem.view(p.inv, t),
       channel: p.channel ? { item: p.channel.itemId, progress: Math.min(1, (t - p.channel.start) / (p.channel.until - p.channel.start)) } : null,
       contract: p.contract,
-      dash: Math.max(0, (p.dashReadyAt ?? 0) - t),
+      dash: Math.max(0, (p.flickReadyAt ?? 0) - t),
       respawn: p.state === 'dead' ? Math.max(0, p.respawnAt - t) : 0,
       inMatch: p.inMatch,
       // État physique exact du joueur, pour que son client rejoue ses commandes non confirmées.
@@ -264,7 +265,7 @@ export class GameRoom {
         vx: Math.round(p.vx * 10) / 10,
         vy: Math.round(p.vy * 10) / 10,
         ms: p.maxSpeed ?? 0,
-        free: p.state === 'alive' && !this.match.world.rules.frozen && !p.dashUntil
+        free: p.state === 'alive' && !this.match.world.rules.frozen && t >= (p.flingUntil ?? 0) && t >= (p.toppleUntil ?? 0)
           && t >= (p.slipUntil ?? 0) && t >= (p.airborneUntil ?? 0),
       },
     };

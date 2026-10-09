@@ -263,7 +263,7 @@ export class Hud {
     }).join('');
     if ($('#slots').innerHTML !== slots) $('#slots').innerHTML = slots;
     if ($('#consumables').innerHTML !== cons) $('#consumables').innerHTML = cons;
-    $('#dash .cd').style.height = `${Math.min(100, (you.dash / 4) * 100)}%`;
+    $('#dash .cd').style.height = `${Math.min(100, (you.dash / 2.4) * 100)}%`;
     $('#wallet').innerHTML = you.inMatch ? `💰 ${you.credits}<br>🏆 ${you.points}` : '💰 —<br>🏆 —';
     this.renderTouchButtons(you);
   }
@@ -284,7 +284,7 @@ export class Hud {
     setBtn('tgadget', gadget ? this.items.get(gadget.id)?.icon : null, gadget?.cooldownTotal ? (gadget.cooldown / gadget.cooldownTotal) * 100 : 0);
     const weapons = inv.slots.filter((s) => s && this.items.get(s.id)?.category === 'weapon').length;
     setBtn('tweapon', weapons > 1 ? '🔁' : null, 0);
-    setBtn('tdash', '💨', (you.dash / 4) * 100);
+    setBtn('tdash', '🪀', (you.dash / 2.4) * 100);
   }
 
   announce(html, tone = '') {
@@ -309,6 +309,7 @@ export class Hud {
     bindCheck('#setAimAssist', 'aimAssist');
     bindCheck('#setHaptics', 'haptics');
     bindCheck('#setLefty', 'leftHanded');
+    bindCheck('#setTilt', 'tiltShift');
     $('#setShake').value = String(settings.shake);
     $('#setShake').onchange = (e) => setSetting('shake', Number(e.target.value));
     $('#setVolume').value = String(settings.volume);

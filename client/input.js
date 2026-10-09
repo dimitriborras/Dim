@@ -2,6 +2,9 @@
 // intentions (direction, angle de visée, boutons). Aucun résultat n'est calculé ici.
 import { settings } from './settings.js';
 
+// Inclinaison de la vue (doit correspondre au rendu) : sert à convertir une direction écran en direction monde.
+export const TILT = 0.78;
+
 const MOVE = {
   up: ['KeyW', 'ArrowUp'], // KeyW = touche Z en AZERTY (code physique)
   down: ['KeyS', 'ArrowDown'],
@@ -10,13 +13,23 @@ const MOVE = {
 };
 
 const KEY_ACTIONS = {
-  Space: 'dash', ShiftLeft: 'dash', KeyE: 'gadget', KeyR: 'c0', KeyF: 'c1',
+  KeyE: 'gadget', KeyR: 'c0', KeyF: 'c1',
   Digit1: 's0', Digit2: 's1', Digit3: 's2', Numpad1: 's0', Numpad2: 's1', Numpad3: 's2',
   Digit4: 'c0', Digit5: 'c1',
 };
 
 // Boutons de manette standard (disposition Xbox) -> actions.
-const PAD_ACTIONS = { 0: 'dash', 1: 'gadget', 2: 'c0', 3: 'c1', 4: 'wp', 5: 'wn' };
+const PAD_ACTIONS = { 1: 'gadget', 2: 'c0', 3: 'c1', 4: 'wp', 5: 'wn' };
+
+// Direction d'un stick (repère écran) -> direction dans le monde, en gardant l'amplitude.
+function screenToWorldDir(x, y) {
+  const m = Math.hypot(x, y);
+  if (m < 1e-6) return { x: 0, y: 0 };
+  const wx = x;
+  const wy = y / TILT;
+  const l = Math.hypot(wx, wy);
+  return { x: (wx / l) * m, y: (wy / l) * m };
+}
 
 // Zone morte radiale avec remise à l'échelle : pas de dérive, mais toute la course reste utile.
 function deadzone(x, y, dz) {
@@ -27,9 +40,9 @@ function deadzone(x, y, dz) {
 }
 
 export class InputController {
-  constructor(canvas, { aimOrigin, onKey, onPadButton }) {
+  constructor(canvas, { aimFromMouse, onKey, onPadButton }) {
     this.canvas = canvas;
-    this.aimOrigin = aimOrigin; // () => {x, y} en pixels écran
+    this.aimFromMouse = aimFromMouse; // (x, y écran) => angle monde depuis le joueur
     this.onKey = onKey;
     this.onPadButton = onPadButton;
     this.keys = new Set();
@@ -42,7 +55,11 @@ export class InputController {
     this.isTouch = false;
     this.device = 'mouse'; // 'mouse' | 'touch' | 'pad'
     this.padPrev = [];
+    this.lastMoveAngle = null;
+    this.padMoving = false;
     this.wheelAt = 0;
+    this.charge = null; // pichenette en cours de chargement
+    this.flick = null; // pichenette relâchée, envoyée avec la prochaine commande
     this.enabled = true;
     this.bind();
   }
@@ -54,11 +71,13 @@ export class InputController {
       if (e.repeat) return;
       this.device = 'mouse';
       this.keys.add(e.code);
+      if (e.code === 'Space' || e.code === 'ShiftLeft') this.startCharge('key');
       if (KEY_ACTIONS[e.code]) { this.actions.push(KEY_ACTIONS[e.code]); e.preventDefault(); }
       this.onKey?.(e.code, true);
     });
     addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
+      if ((e.code === 'Space' || e.code === 'ShiftLeft') && this.charge?.source === 'key') this.releaseCharge();
       this.onKey?.(e.code, false);
     });
     addEventListener('blur', () => { this.keys.clear(); this.mouseDown = false; });
@@ -143,6 +162,31 @@ export class InputController {
     setupStick(root.querySelector('#zoneL'), 'move');
     setupStick(root.querySelector('#zoneR'), 'aim');
 
+    // Bouton pichenette : on le tire comme une fronde (direction opposée au glissé),
+    // un simple appui donne une petite pichenette vers l'avant.
+    const sling = root.querySelector('#tdash');
+    let slingId = null;
+    sling.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      slingId = e.pointerId;
+      sling.setPointerCapture(slingId);
+      this.startCharge('touch', e.clientX, e.clientY);
+      sling.classList.add('on');
+    });
+    sling.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== slingId || !this.charge) return;
+      this.charge.dx = e.clientX - this.charge.ox;
+      this.charge.dy = e.clientY - this.charge.oy;
+    });
+    const slingEnd = (e) => {
+      if (e.pointerId !== slingId) return;
+      slingId = null;
+      sling.classList.remove('on');
+      this.releaseCharge(e.type === 'pointercancel');
+    };
+    sling.addEventListener('pointerup', slingEnd);
+    sling.addEventListener('pointercancel', slingEnd);
+
     for (const b of root.querySelectorAll('[data-act]')) {
       b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -163,6 +207,31 @@ export class InputController {
     this.actions.push(a);
   }
 
+  startCharge(source, ox = 0, oy = 0) {
+    if (this.charge) return;
+    this.charge = { source, start: performance.now(), ox, oy, dx: 0, dy: 0 };
+  }
+
+  // Angle (monde) et puissance (0 à 1) de la pichenette en cours, pour l'aperçu et l'envoi.
+  chargeState() {
+    const c = this.charge;
+    if (!c) return null;
+    if (c.source === 'touch') {
+      const d = Math.hypot(c.dx, c.dy);
+      if (d < 14) return { a: this.lastMoveAngle ?? this.aim, p: 0.45, tap: true };
+      return { a: Math.atan2(-c.dy / TILT, -c.dx), p: Math.min(1, d / 90) };
+    }
+    const p = Math.min(1, 0.25 + (performance.now() - c.start) / 650);
+    const a = c.source === 'pad' && this.lastMoveAngle !== null && this.padMoving ? this.lastMoveAngle : this.aim;
+    return { a, p };
+  }
+
+  releaseCharge(cancel = false) {
+    const st = this.chargeState();
+    this.charge = null;
+    if (!cancel && st) this.flick = { a: Math.round(st.a * 1000) / 1000, p: Math.round(st.p * 100) / 100 };
+  }
+
   pollPad() {
     const pads = navigator.getGamepads?.() ?? [];
     const pad = [...pads].find((p) => p && p.connected);
@@ -170,6 +239,8 @@ export class InputController {
     const pressed = pad.buttons.map((b) => b.pressed || b.value > 0.5);
     const any = pressed.some(Boolean) || pad.axes.some((a) => Math.abs(a) > 0.35);
     if (any) this.device = 'pad';
+    if (pressed[0] && !this.padPrev[0]) this.startCharge('pad');
+    if (!pressed[0] && this.padPrev[0] && this.charge?.source === 'pad') this.releaseCharge();
     pressed.forEach((on, i) => {
       if (!on || this.padPrev[i]) return;
       if (PAD_ACTIONS[i]) this.actions.push(PAD_ACTIONS[i]);
@@ -196,22 +267,23 @@ export class InputController {
 
     const pad = this.pollPad();
     if (pad) {
-      if (pad.move.m > 0) { mx = pad.move.x; my = pad.move.y; }
+      if (pad.move.m > 0) ({ x: mx, y: my } = screenToWorldDir(pad.move.x, pad.move.y));
+      this.padMoving = pad.move.m > 0.3;
       if (pad.aim.m > 0) {
-        this.aim = Math.atan2(pad.aim.y, pad.aim.x);
+        this.aim = Math.atan2(pad.aim.y / TILT, pad.aim.x);
         this.aimAssisted = true;
         if (settings.autoFire && pad.aim.m > 0.6) fire = true;
       } else if (pad.move.m > 0.3) {
-        this.aim = Math.atan2(pad.move.y, pad.move.x);
+        this.aim = Math.atan2(my, mx);
         this.aimAssisted = true;
       }
       if (pad.trigger > 0.3) fire = true;
     } else if (this.touch.move || this.touch.aim || this.device === 'touch') {
-      if (this.touch.move) { mx = this.touch.move.x; my = this.touch.move.y; }
+      if (this.touch.move) ({ x: mx, y: my } = screenToWorldDir(this.touch.move.x, this.touch.move.y));
       if (this.touch.aim) {
         const { x, y } = this.touch.aim;
         const m = Math.hypot(x, y);
-        if (m > 0.2) { this.aim = Math.atan2(y, x); this.aimAssisted = true; }
+        if (m > 0.2) { this.aim = Math.atan2(y / TILT, x); this.aimAssisted = true; }
         if (settings.autoFire && m > 0.5) fire = true;
       } else if (this.touch.move && Math.hypot(mx, my) > 0.3) {
         this.aim = Math.atan2(my, mx); // sans pouce droit : on vise là où l'on avance
@@ -219,12 +291,16 @@ export class InputController {
       }
       if (this.touch.fireHeld) fire = true;
     } else {
-      const o = this.aimOrigin();
-      this.aim = Math.atan2(this.mouse.y - o.y, this.mouse.x - o.x);
+      this.aim = this.aimFromMouse(this.mouse.x, this.mouse.y) ?? this.aim;
     }
+    if (Math.hypot(mx, my) > 0.3) this.lastMoveAngle = Math.atan2(my, mx);
 
     const act = this.actions.splice(0, 6);
+    const fl = this.flick;
+    this.flick = null;
     if (!this.enabled) return { t: 'in', mx: 0, my: 0, a: this.aim, f: false, act: [] };
-    return { t: 'in', mx, my, a: Math.round(this.aim * 1000) / 1000, f: fire, act };
+    const cmd = { t: 'in', mx, my, a: Math.round(this.aim * 1000) / 1000, f: fire, act };
+    if (fl) cmd.fl = fl;
+    return cmd;
   }
 }

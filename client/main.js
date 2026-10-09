@@ -14,7 +14,10 @@ const renderer = new Renderer(canvas);
 const sfx = new Sfx();
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 if (isTouch) document.body.classList.add('touch');
-const applyBodySettings = () => document.body.classList.toggle('lefty', settings.leftHanded);
+const applyBodySettings = () => {
+  document.body.classList.toggle('lefty', settings.leftHanded);
+  document.body.classList.toggle('no-tilt', !settings.tiltShift);
+};
 applyBodySettings();
 onSettingsChange(applyBodySettings);
 
@@ -140,9 +143,12 @@ function onSnap(msg) {
 
 // ------------------------------------------------------------ commandes
 const input = new InputController(canvas, {
-  aimOrigin: () => {
+  // Souris : point visé sur le sol (la vue est inclinée), puis angle depuis le joueur.
+  aimFromMouse: (sx, sy) => {
     const me = currentState?.players.find((p) => p.id === youId);
-    return me ? renderer.toScreen(me.x, me.y) : { x: innerWidth / 2, y: innerHeight / 2 };
+    if (!me) return null;
+    const w = renderer.toWorld(sx, sy);
+    return Math.atan2(w.y - me.y, w.x - me.x);
   },
   onKey: (code, down) => {
     if (!hud) return;
@@ -290,6 +296,7 @@ function frame() {
     crownHolder: m.hud?.kind === 'crown' ? m.hud.holder : null,
     channel: latest.you?.channel,
     myHud: myHud(latest.you),
+    charge: input.chargeState(),
     showHp: ['combat', 'finale', 'lobby'].includes(m.phase),
     touch: isTouch,
     mouseWorld: renderer.toWorld(input.mouse.x, input.mouse.y),

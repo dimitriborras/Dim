@@ -19,7 +19,7 @@ test('prédiction locale : même trajectoire que le serveur malgré 150 ms de pi
   let mid = null;
   for (; tick < 120; tick++) {
     const moving = tick < 40;
-    const cmd = { t: 'in', mx: moving ? 1 : 0, my: moving && tick > 25 ? 0.5 : 0, a: 0, f: false, act: [] };
+    const cmd = { t: 'in', mx: moving ? 1 : 0, my: moving && tick > 25 ? -0.5 : 0, a: 0, f: false, act: [] };
     pred.record(cmd);
     toServer.push({ at: tick + LAG_TICKS, cmd });
     while (toServer.length && toServer[0].at <= tick) room.handle(me.id, toServer.shift().cmd);

@@ -234,3 +234,9 @@ body.touch #announce { top: 18%; }
 body.touch #announce .a { font-size: 18px; }
 body.touch #consumables, body.touch #shopBtn kbd, body.touch .slot .key { display: none; }
 body.touch #shopBtn { padding: 6px 10px; }
+
+/* ---------- Diorama : effet miniature (tilt-shift) ---------- */
+.tilt { position: fixed; left: 0; right: 0; height: 22vh; pointer-events: none; z-index: 1; -webkit-backdrop-filter: blur(2.5px); backdrop-filter: blur(2.5px); }
+#tiltTop { top: 0; -webkit-mask-image: linear-gradient(#000, transparent); mask-image: linear-gradient(#000, transparent); }
+#tiltBottom { bottom: 0; -webkit-mask-image: linear-gradient(transparent, #000); mask-image: linear-gradient(transparent, #000); }
+body.no-tilt .tilt { display: none; }

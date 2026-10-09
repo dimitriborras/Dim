@@ -35,7 +35,11 @@ export function parseClientMessage(raw) {
       const a = num(msg.a, -10, 10);
       const act = Array.isArray(msg.act) ? msg.act.filter((x) => ACTIONS.has(x)).slice(0, 6) : [];
       const s = Number.isInteger(msg.s) && msg.s >= 0 ? msg.s : null;
-      return { t: 'in', mx, my, a, f: msg.f === true || msg.f === 1, act, s };
+      // Pichenette relâchée ce tick-ci : angle et puissance (0 à 1).
+      const fl = msg.fl && typeof msg.fl === 'object' && num(msg.fl.a, -10, 10) !== null
+        ? { a: num(msg.fl.a, -10, 10), p: num(msg.fl.p, 0, 1) ?? 0.5 }
+        : null;
+      return { t: 'in', mx, my, a, f: msg.f === true || msg.f === 1, act, s, fl };
     }
     case 'buy': {
       if (typeof msg.item !== 'string' || !Object.hasOwn(ITEMS, msg.item)) return null;

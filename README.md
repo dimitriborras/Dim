@@ -50,7 +50,7 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   `cloudflared tunnel --url http://localhost:8080`, puis partager l'adresse `https://…` obtenue
   (les WebSocket passent automatiquement en `wss`).
 - **Port déjà utilisé** : `PORT=3000 npm start` (Windows PowerShell : `$env:PORT=3000; npm start`).
-- `npm test` lance les 21 tests (économie, anti-triche, phases, réseau).
+- `npm test` lance les 24 tests (économie, anti-triche, phases, réseau).
 
 - **Créer une salle** : un code à 4 lettres et un lien à partager s'affichent (aucun compte nécessaire).
 - **Rejoindre** : code ou lien `?room=CODE`. En cas de coupure, le client se reconnecte seul
@@ -63,13 +63,22 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
 | ZQSD / WASD : déplacement | Pouce gauche : stick flottant | Stick gauche : déplacement |
 | Souris : visée, clic gauche : tir | Pouce droit : visée, tir automatique au-delà de la moitié | Stick droit : visée (tir automatique), gâchettes : tir |
 | Clic droit / E : gadget | Boutons qui affichent l'objet équipé et sa recharge | B : gadget |
-| Espace / Maj : esquive | 💨 : esquive | A : esquive |
+| Espace (maintenir, relâcher) : pichenette vers la souris | 🪀 : tirer comme une fronde | A (maintenir) : pichenette |
 | Molette, 1 2 3 : armes | 🔁 : arme suivante | LB / RB : armes |
 | R / F : consommables | Icône du consommable | X / Y : consommables |
 | B : boutique, Tab : scores, M : son | ⚙️ : réglages | Start : boutique, Select : scores |
 
 Le bouton ⚙️ règle le tir automatique, l'aide à la visée (tactile et manette, jamais à la souris), les vibrations,
 le mode gaucher, l'intensité des tremblements et le volume.
+
+## Physique et présentation
+
+- **Diorama** : le bureau d'une chambre d'enfant, la nuit, vu de trois quarts, avec un effet miniature
+  (désactivable dans ⚙️). La simulation reste en 2D vue de dessus ; seul le rendu projette la scène.
+- **Pichenette** : on tend l'élastique puis on relâche pour se lancer. Percuter une figurine lui transmet
+  presque toute la vitesse, comme au billard, et la chute éventuelle est créditée au lanceur. Recharge de 2,4 s.
+- **Figurines lestées** : un coup fort (gant, bombe, pichenette, bumper) les renverse ; elles roulent,
+  perdent le contrôle 0,75 s, puis se redressent en oscillant. Les chocs entre figurines rebondissent.
 
 ## Boucle de partie
 

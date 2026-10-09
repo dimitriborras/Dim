@@ -9,6 +9,9 @@
 </head>
 <body>
   <canvas id="game"></canvas>
+  <!-- Effet miniature : flou en haut et en bas de l'écran, comme une photo de maquette. -->
+  <div id="tiltTop" class="tilt" aria-hidden="true"></div>
+  <div id="tiltBottom" class="tilt" aria-hidden="true"></div>
 
   <!-- Écran d'accueil -->
   <section id="menu" class="screen">
@@ -34,7 +37,7 @@
             ZQSD / WASD : déplacement<br>
             Souris : visée — Clic gauche : tir<br>
             Clic droit ou E : gadget<br>
-            Espace : esquive (recharge 4 s)<br>
+            Espace : maintenir puis relâcher pour la pichenette<br>
             1 2 3 : choisir l'arme / déclencher un gadget<br>
             R / F : consommables — B : boutique<br>
             Tab : classement — M : son
@@ -42,7 +45,8 @@
           <div><b>Mobile</b> (paysage)<br>
             Pouce gauche : déplacement<br>
             Pouce droit : visée (pousser à fond = tir)<br>
-            Boutons : tir, esquive, gadget, consommables<br>
+            🪀 : tirer comme une fronde pour la pichenette<br>
+            Boutons : tir, gadget, consommables<br>
             Touchez un emplacement pour changer d'arme
           </div>
         </div>
@@ -67,7 +71,7 @@
       <div id="wallet"></div>
       <div id="slots"></div>
       <div id="consumables"></div>
-      <div id="dash" class="slot small" title="Esquive (Espace)"><span class="ico">💨</span><span class="key">Esp.</span><i class="cd"></i></div>
+      <div id="dash" class="slot small" title="Pichenette (maintenir Espace, relâcher)"><span class="ico">🪀</span><span class="key">Esp.</span><i class="cd"></i></div>
       <button id="shopBtn" class="btn small">🛒 Boutique <kbd>B</kbd></button>
     </div>
     <div id="shop" hidden>
@@ -88,6 +92,7 @@
       <label class="opt"><input type="checkbox" id="setAutoFire"> Tir automatique en visant <small>(tactile, manette)</small></label>
       <label class="opt"><input type="checkbox" id="setAimAssist"> Aide à la visée légère <small>(tactile, manette)</small></label>
       <label class="opt"><input type="checkbox" id="setHaptics"> Vibrations</label>
+      <label class="opt"><input type="checkbox" id="setTilt"> Effet miniature (flou de maquette)</label>
       <label class="opt"><input type="checkbox" id="setLefty"> Gaucher : visée à gauche, déplacement à droite</label>
       <label class="opt">Tremblements de l'écran
         <select id="setShake"><option value="0">Aucun</option><option value="0.5">Légers</option><option value="1">Normaux</option></select>
@@ -96,8 +101,8 @@
       <details class="controls" open>
         <summary>Commandes</summary>
         <div class="controls-grid">
-          <div><b>Clavier / souris</b><br>ZQSD ou WASD, souris, clic : tir<br>Clic droit ou E : gadget<br>Espace ou Maj : esquive<br>Molette ou 1 2 3 : armes<br>R / F : consommables<br>B : boutique — Tab : scores</div>
-          <div><b>Manette</b><br>Stick gauche : bouger<br>Stick droit : viser (tir auto)<br>Gâchettes : tir<br>A : esquive — B : gadget<br>X / Y : consommables<br>LB / RB : armes — Start : boutique</div>
+          <div><b>Clavier / souris</b><br>ZQSD ou WASD, souris, clic : tir<br>Clic droit ou E : gadget<br>Espace (maintenir puis relâcher) : pichenette vers la souris<br>Molette ou 1 2 3 : armes<br>R / F : consommables<br>B : boutique — Tab : scores</div>
+          <div><b>Manette</b><br>Stick gauche : bouger<br>Stick droit : viser (tir auto)<br>Gâchettes : tir<br>A (maintenir) : pichenette — B : gadget<br>X / Y : consommables<br>LB / RB : armes — Start : boutique</div>
         </div>
       </details>
     </div>
@@ -109,7 +114,7 @@
     <div id="zoneR" class="zone"><div class="stick"><div class="knob"></div></div></div>
     <div id="touchButtons">
       <button data-hold="fire" class="tbtn big">TIR</button>
-      <button data-act="dash" class="tbtn" id="tdash">💨</button>
+      <button class="tbtn" id="tdash" aria-label="Pichenette : glisser pour tendre l'élastique">🪀</button>
       <button data-act="gadget" class="tbtn" id="tgadget" hidden>·</button>
       <button data-act="wn" class="tbtn" id="tweapon" hidden>🔁</button>
       <button data-act="c0" class="tbtn" id="tc0" hidden>·</button>
