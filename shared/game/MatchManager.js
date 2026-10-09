@@ -111,6 +111,10 @@ export class MatchManager {
     this.rounds = rounds;
     this.round = 1;
     this.plan = this.registry.plan(rounds, this.rng);
+    // La Rafale ouvre la partie : des gestes simples, idéal pour découvrir le jeu.
+    const mi = this.plan.indexOf('micro');
+    if (mi > 0) [this.plan[0], this.plan[mi]] = [this.plan[mi], this.plan[0]];
+    else if (mi < 0 && this.registry.get('micro')) this.plan[0] = 'micro';
     this.lastResults = null;
     this.standings = null;
     this.enterIntro();
