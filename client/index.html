@@ -9,9 +9,6 @@
 </head>
 <body>
   <canvas id="game"></canvas>
-  <!-- Effet miniature : flou en haut et en bas de l'écran, comme une photo de maquette. -->
-  <div id="tiltTop" class="tilt" aria-hidden="true"></div>
-  <div id="tiltBottom" class="tilt" aria-hidden="true"></div>
 
   <!-- Écran d'accueil -->
   <section id="menu" class="screen">
@@ -33,21 +30,15 @@
       <details class="controls">
         <summary>Commandes</summary>
         <div class="controls-grid">
-          <div><b>PC</b><br>
-            ZQSD / WASD : déplacement<br>
-            Souris : visée — Clic gauche : tir<br>
-            Clic droit ou E : gadget<br>
-            Espace : maintenir puis relâcher pour la pichenette<br>
-            1 2 3 : choisir l'arme / déclencher un gadget<br>
-            R / F : consommables — B : boutique<br>
-            Tab : classement — M : son
+          <div><b>Un seul doigt</b><br>
+            Pose le doigt n'importe où, tire en arrière, relâche : ta figurine part comme une bille.<br>
+            Percute les autres pour les pousser hors du bureau.<br>
+            Petite tape : petit bond.
           </div>
-          <div><b>Mobile</b> (paysage)<br>
-            Pouce gauche : déplacement<br>
-            Pouce droit : visée (pousser à fond = tir)<br>
-            🪀 : tirer comme une fronde pour la pichenette<br>
-            Boutons : tir, gadget, consommables<br>
-            Touchez un emplacement pour changer d'arme
+          <div><b>Le reste est automatique</b><br>
+            Posée, ta figurine tire toute seule sur l'adversaire le plus proche.<br>
+            Bouton rond : ton objet (gadget ou consommable).<br>
+            Joue en vertical ou en paysage, à la souris sur PC.
           </div>
         </div>
       </details>
@@ -69,10 +60,9 @@
     <div id="lobby" hidden></div>
     <div id="bottom">
       <div id="wallet"></div>
-      <div id="slots"></div>
-      <div id="consumables"></div>
-      <div id="dash" class="slot small" title="Pichenette (maintenir Espace, relâcher)"><span class="ico">🪀</span><span class="key">Esp.</span><i class="cd"></i></div>
-      <button id="shopBtn" class="btn small">🛒 Boutique <kbd>B</kbd></button>
+      <div id="gear" title="Équipement : le tir est automatique quand ta figurine est posée"></div>
+      <button id="itemBtn" class="item-btn" aria-label="Utiliser l'objet (E ou Espace)"><span class="ico">·</span><i class="ring"></i></button>
+      <button id="shopBtn" class="btn small">🛒<span class="lbl"> Boutique</span></button>
     </div>
     <div id="shop" hidden>
       <header>
@@ -89,11 +79,7 @@
     <button id="settingsBtn" class="btn small ghost" aria-label="Réglages">⚙️</button>
     <div id="settingsPanel" hidden>
       <header><h2>Réglages</h2><button id="settingsClose" class="btn small ghost" aria-label="Fermer">✕</button></header>
-      <label class="opt"><input type="checkbox" id="setAutoFire"> Tir automatique en visant <small>(tactile, manette)</small></label>
-      <label class="opt"><input type="checkbox" id="setAimAssist"> Aide à la visée légère <small>(tactile, manette)</small></label>
       <label class="opt"><input type="checkbox" id="setHaptics"> Vibrations</label>
-      <label class="opt"><input type="checkbox" id="setTilt"> Effet miniature (flou de maquette)</label>
-      <label class="opt"><input type="checkbox" id="setLefty"> Gaucher : visée à gauche, déplacement à droite</label>
       <label class="opt">Tremblements de l'écran
         <select id="setShake"><option value="0">Aucun</option><option value="0.5">Légers</option><option value="1">Normaux</option></select>
       </label>
@@ -101,28 +87,12 @@
       <details class="controls" open>
         <summary>Commandes</summary>
         <div class="controls-grid">
-          <div><b>Clavier / souris</b><br>ZQSD ou WASD, souris, clic : tir<br>Clic droit ou E : gadget<br>Espace (maintenir puis relâcher) : pichenette vers la souris<br>Molette ou 1 2 3 : armes<br>R / F : consommables<br>B : boutique — Tab : scores</div>
-          <div><b>Manette</b><br>Stick gauche : bouger<br>Stick droit : viser (tir auto)<br>Gâchettes : tir<br>A (maintenir) : pichenette — B : gadget<br>X / Y : consommables<br>LB / RB : armes — Start : boutique</div>
+          <div><b>Un seul doigt (ou la souris)</b><br>Poser n'importe où, tirer en arrière, relâcher : pichenette<br>Petite tape : petit bond vers ce point<br>Posée, ta figurine tire toute seule<br>Bouton rond : utiliser ton objet</div>
+          <div><b>Clavier / manette</b><br>E ou Espace : objet — B : boutique — Tab : scores<br>Manette : stick gauche pour viser, A maintenu puis relâché pour la pichenette, B : objet</div>
         </div>
       </details>
     </div>
   </section>
-
-  <!-- Commandes tactiles -->
-  <section id="touch" hidden>
-    <div id="zoneL" class="zone"><div class="stick"><div class="knob"></div></div></div>
-    <div id="zoneR" class="zone"><div class="stick"><div class="knob"></div></div></div>
-    <div id="touchButtons">
-      <button data-hold="fire" class="tbtn big">TIR</button>
-      <button class="tbtn" id="tdash" aria-label="Pichenette : glisser pour tendre l'élastique">🪀</button>
-      <button data-act="gadget" class="tbtn" id="tgadget" hidden>·</button>
-      <button data-act="wn" class="tbtn" id="tweapon" hidden>🔁</button>
-      <button data-act="c0" class="tbtn" id="tc0" hidden>·</button>
-      <button data-act="c1" class="tbtn" id="tc1" hidden>·</button>
-    </div>
-  </section>
-
-  <div id="rotate">Tournez votre téléphone en mode paysage 📱↻</div>
 
   <script type="module" src="main.js"></script>
 </body>

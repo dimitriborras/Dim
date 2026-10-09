@@ -12,19 +12,26 @@ export const MAX_PLAYERS = 8;
 export const PLAYER = {
   radius: 20,
   maxHp: 100,
-  speed: 250,
-  accel: 2400,
-  friction: 10,
-  knockbackFriction: 3.2,
-  // Pichenette : on tire l'élastique puis on relâche. `power` va de 0 à 1.
-  flickMinSpeed: 380,
-  flickMaxSpeed: 1020,
-  flickTime: 0.2, // + 0,3 s à pleine puissance : durée pendant laquelle on file sans contrôle
-  flickCooldown: 2.4,
-  // Figurine lestée : au-delà de cette vitesse subie, elle se renverse puis se redresse.
-  toppleSpeed: 560,
-  toppleTime: 0.75,
-  restitution: 0.88, // plastique dur : les chocs entre figurines rebondissent
+  // Physique de palet : on ne marche pas, on se lance (pichenette) puis on glisse.
+  glideFriction: 1.9, // freinage en glissade (par seconde)
+  flingFriction: 0.6, // freinage juste après la pichenette : on file
+  stopSpeed: 12, // sous cette vitesse, la figurine s'immobilise
+  settledSpeed: 45, // sous cette vitesse, elle est « posée » et tire automatiquement
+  flickMinSpeed: 300,
+  flickMaxSpeed: 900,
+  flingTime: 0.15, // + 0,15 s à pleine puissance
+  hopSpeed: 230, // petite tape : petit bond pour se placer
+  energyMax: 3, // charges de pichenette
+  energyRegen: 1.25, // charges regagnées par seconde
+  flickCost: 1,
+  hopCost: 0.35,
+  wallRestitution: 0.75, // rebond sur les briques, comme au billard
+  restitution: 0.88, // chocs entre figurines : plastique dur
+  bumperSpeed: 650,
+  // Figurine lestée : seul un très gros choc la renverse.
+  toppleSpeed: 720,
+  toppleTime: 0.6,
+  autoFireRange: 620,
   respawnDelay: 3,
   spawnInvuln: 1,
   fallTime: 0.45,
@@ -33,7 +40,7 @@ export const PLAYER = {
 
 export const HAZARD = {
   band: 56, // largeur de la bande glissante près des bords
-  frictionFactor: 0.35,
+  frictionFactor: 0.7, // on glisse un peu plus loin près des bords
   knockbackFactor: 1.35,
 };
 

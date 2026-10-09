@@ -66,6 +66,8 @@ export class Sfx {
         this.tone({ f: 1800, f2: 900, d: 0.04, type: 'square', v: Math.min(0.12, 0.03 + ev.power / 8000) });
         this.tone({ noise: true, d: 0.05, v: Math.min(0.1, ev.power / 9000) });
         break;
+      case 'hop': if (mine) this.tone({ f: 520, f2: 760, d: 0.06, type: 'triangle', v: 0.04 }); break;
+      case 'thud': this.tone({ f: 260, f2: 120, d: 0.06, type: 'square', v: 0.05 }); break;
       case 'topple': this.tone({ f: 420, f2: 140, d: 0.18, type: 'triangle', v: 0.07 }); break;
       case 'spring': case 'jump': this.tone({ f: 200, f2: 800, d: 0.2, type: 'sine', v: 0.08 }); break;
       case 'bump': this.tone({ f: 500, f2: 250, d: 0.1, type: 'triangle', v: 0.07 }); break;

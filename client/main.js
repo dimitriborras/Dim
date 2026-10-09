@@ -5,8 +5,10 @@ import { Hud } from './hud.js';
 import { Sfx } from './audio.js';
 import { Predictor } from './predict.js';
 import { INTERP_DELAY_MS } from '../shared/constants.js';
-import { angleDiff } from '../shared/geometry.js';
-import { settings, onSettingsChange, vibrate } from './settings.js';
+import { MAPS } from '../shared/maps.js';
+import { simulateFlick } from '../shared/game/movement.js';
+import { pointInRect } from '../shared/geometry.js';
+import { vibrate } from './settings.js';
 
 const $ = (s) => document.querySelector(s);
 const canvas = $('#game');
@@ -14,12 +16,10 @@ const renderer = new Renderer(canvas);
 const sfx = new Sfx();
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 if (isTouch) document.body.classList.add('touch');
-const applyBodySettings = () => {
-  document.body.classList.toggle('lefty', settings.leftHanded);
-  document.body.classList.toggle('no-tilt', !settings.tiltShift);
-};
-applyBodySettings();
-onSettingsChange(applyBodySettings);
+// Mise en page : le téléphone tenu en vertical est le format principal.
+const applyLayout = () => document.body.classList.toggle('portrait', innerHeight > innerWidth);
+applyLayout();
+addEventListener('resize', applyLayout);
 
 let conn = null;
 let youId = null;
@@ -106,13 +106,10 @@ function enterGame(welcome) {
   document.body.classList.add('playing');
   if (!hud) {
     hud = new Hud({ send: (m) => conn.send(m), items: welcome.items });
-    hud.onSlotTap = (i) => input.pressAction(`s${i}`);
-    hud.onConsumableTap = (i) => input.pressAction(`c${i}`);
+    hud.onItem = () => input.pressAction('item');
   }
   if (welcome.code && conn instanceof OnlineConnection) history.replaceState(null, '', `?room=${welcome.code}`);
   if (isTouch) {
-    $('#touch').hidden = false;
-    input.bindTouch($('#touch'));
     conn.send({ t: 'touch', on: true });
     document.documentElement.requestFullscreen?.().catch(() => {});
   }
@@ -143,13 +140,8 @@ function onSnap(msg) {
 
 // ------------------------------------------------------------ commandes
 const input = new InputController(canvas, {
-  // Souris : point visé sur le sol (la vue est inclinée), puis angle depuis le joueur.
-  aimFromMouse: (sx, sy) => {
-    const me = currentState?.players.find((p) => p.id === youId);
-    if (!me) return null;
-    const w = renderer.toWorld(sx, sy);
-    return Math.atan2(w.y - me.y, w.x - me.x);
-  },
+  screenToWorld: (sx, sy) => renderer.toWorld(sx, sy),
+  playerWorld: () => currentState?.players.find((p) => p.id === youId && p.s === 'alive') ?? null,
   onKey: (code, down) => {
     if (!hud) return;
     if (code === 'KeyB' && down) hud.toggleShop();
@@ -164,33 +156,9 @@ const input = new InputController(canvas, {
   },
 });
 
-// Aide à la visée (tactile et manette uniquement) : la visée est légèrement attirée vers
-// la cible la plus proche de la direction choisie. Elle ne vise jamais à la place du joueur.
-function applyAimAssist(cmd) {
-  if (!settings.aimAssist || !input.aimAssisted || !currentState) return;
-  const me = currentState.players.find((p) => p.id === youId);
-  if (!me || me.s !== 'alive') return;
-  const targets = [
-    ...currentState.players.filter((o) => o.id !== youId && o.s === 'alive'),
-    ...currentState.decoys.filter((d) => d.owner !== youId),
-  ];
-  let best = null;
-  for (const o of targets) {
-    const dx = o.x - me.x;
-    const dy = o.y - me.y;
-    const d = Math.hypot(dx, dy);
-    if (d > 650 || d < 1) continue;
-    const diff = angleDiff(Math.atan2(dy, dx), cmd.a);
-    const tolerance = Math.min(0.35, 0.1 + 26 / d); // plus tolérant de près
-    if (Math.abs(diff) < tolerance && (best === null || Math.abs(diff) < Math.abs(best))) best = diff;
-  }
-  if (best !== null) cmd.a = Math.round((cmd.a + best * 0.6) * 1000) / 1000;
-}
-
 setInterval(() => {
   if (!conn || !youId) return;
   const cmd = input.sample();
-  applyAimAssist(cmd);
   predictor.record(cmd);
   conn.send(cmd);
 }, 1000 / 30);
@@ -262,10 +230,23 @@ function interpolate() {
 }
 
 const predictor = new Predictor();
-function myHud(you) {
-  if (!you) return null;
-  const s = you.inv.slots[you.inv.active];
-  return { ammo: s?.ammo ?? null, maxAmmo: s?.maxAmmo ?? null, reloading: s?.reloading ?? 0, dash: you.dash };
+// Aperçu de la pichenette : simulation exacte (même physique que le serveur) depuis la
+// position affichée, avec les plateformes mobiles à leur position actuelle.
+function trajectory(st, snap) {
+  const ch = input.chargeState();
+  if (!ch || ch.cancel || ch.tap) return null;
+  const me = st.players.find((p) => p.id === youId);
+  if (!me || me.s !== 'alive') return null;
+  const map = MAPS[st.map] ?? MAPS.arena;
+  const movers = (st.movers ?? []).map(([x, y], i) => ({ x, y, w: map.movingPlatforms[i]?.w ?? 0, h: map.movingPlatforms[i]?.h ?? 0 }));
+  const isGround = (x, y) => {
+    if (movers.some((r) => pointInRect(x, y, r))) return true;
+    if (!map.platforms.some((r) => pointInRect(x, y, r))) return false;
+    return !map.holes.some((h) => pointInRect(x, y, h));
+  };
+  const springAt = (x, y) => map.springs.some((r) => pointInRect(x, y, r));
+  const sim = simulateFlick(me, ch.a, ch.p, map, { isGround, stopAt: springAt, factor: snap.you?.body?.sf ?? 1 });
+  return { ...sim, angle: ch.a, power: ch.p, ready: (predictor.pos ? predictor.energy : snap.you?.energy ?? 0) >= 1 };
 }
 
 let currentState = null;
@@ -286,7 +267,7 @@ function frame() {
   const predicted = predictor.display(frameDt);
   st.players = st.players.map((p) => {
     if (p.id !== youId || p.s !== 'alive') return p;
-    return predicted ? { ...p, ...predicted, a: input.aim } : { ...p, a: input.aim };
+    return predicted ? { ...p, x: predicted.x, y: predicted.y } : p;
   });
   currentState = {
     ...st,
@@ -295,11 +276,10 @@ function frame() {
     champion: m.phase === 'combat' || m.phase === 'rewards' ? m.champion : null,
     crownHolder: m.hud?.kind === 'crown' ? m.hud.holder : null,
     channel: latest.you?.channel,
-    myHud: myHud(latest.you),
-    charge: input.chargeState(),
+    energy: predictor.pos ? predictor.energy : latest.you?.energy ?? 0,
+    trajectory: trajectory(st, latest),
     showHp: ['combat', 'finale', 'lobby'].includes(m.phase),
     touch: isTouch,
-    mouseWorld: renderer.toWorld(input.mouse.x, input.mouse.y),
   };
   renderer.draw(currentState);
 }

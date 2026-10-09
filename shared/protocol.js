@@ -5,7 +5,7 @@ import { ITEMS } from './items.js';
 import { ROUND_OPTIONS } from './constants.js';
 
 export const MAX_MESSAGE_BYTES = 2048;
-const ACTIONS = new Set(['dash', 'gadget', 'c0', 'c1', 's0', 's1', 's2', 'wn', 'wp']);
+const ACTIONS = new Set(['item', 'gadget', 'c0', 'c1', 's0', 's1', 's2', 'wn', 'wp']);
 
 const num = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null);
 
@@ -36,8 +36,9 @@ export function parseClientMessage(raw) {
       const act = Array.isArray(msg.act) ? msg.act.filter((x) => ACTIONS.has(x)).slice(0, 6) : [];
       const s = Number.isInteger(msg.s) && msg.s >= 0 ? msg.s : null;
       // Pichenette relâchée ce tick-ci : angle et puissance (0 à 1).
+      // Pichenette relâchée (angle, puissance 0 à 1) ou petite tape (`hop`).
       const fl = msg.fl && typeof msg.fl === 'object' && num(msg.fl.a, -10, 10) !== null
-        ? { a: num(msg.fl.a, -10, 10), p: num(msg.fl.p, 0, 1) ?? 0.5 }
+        ? { a: num(msg.fl.a, -10, 10), p: num(msg.fl.p, 0, 1) ?? 0.5, hop: msg.fl.hop === true }
         : null;
       return { t: 'in', mx, my, a, f: msg.f === true || msg.f === 1, act, s, fl };
     }

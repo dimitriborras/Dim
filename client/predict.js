@@ -1,9 +1,10 @@
-// Prédiction locale : le client applique tout de suite ses propres commandes avec la
-// même physique que le serveur, puis se recale sur chaque état confirmé en rejouant
-// les commandes pas encore traitées. Le serveur reste seul juge (tirs, dégâts, chutes).
-import { DT } from '../shared/constants.js';
+// Prédiction locale : le client applique tout de suite ses propres gestes (pichenette,
+// petite tape) avec la même physique de palet que le serveur, puis se recale sur chaque
+// état confirmé en rejouant les commandes pas encore traitées. Le serveur reste seul juge
+// des chocs entre figurines, des tirs et des chutes.
+import { DT, PLAYER } from '../shared/constants.js';
 import { MAPS } from '../shared/maps.js';
-import { normalizeInput, inHazard, steerOnGround, collideWalls } from '../shared/game/movement.js';
+import { glide, collideWalls, collideBumpers, flickSpeed, flingDuration } from '../shared/game/movement.js';
 
 const STEP_MS = DT * 1000;
 
@@ -15,35 +16,45 @@ export class Predictor {
     this.prev = null;
     this.stepAt = 0;
     this.offset = { x: 0, y: 0 };
-    this.maxSpeed = 0;
+    this.sf = 1;
+    this.slowed = false;
     this.map = null;
+    this.energy = PLAYER.energyMax;
   }
 
+  // Même ordre que World.stepPlayer : recharge, geste, glissade, rebonds.
   step(b, cmd) {
-    const { mx, my } = normalizeInput(cmd.mx, cmd.my);
-    steerOnGround(b, mx, my, this.maxSpeed, inHazard(this.map, b.x, b.y), DT);
-    b.x += b.vx * DT;
-    b.y += b.vy * DT;
+    b.energy = Math.min(PLAYER.energyMax, b.energy + PLAYER.energyRegen * DT);
+    const f = cmd.fl;
+    if (f) {
+      if (f.hop && b.energy >= PLAYER.hopCost) {
+        const v = PLAYER.hopSpeed * this.sf;
+        b.vx = Math.cos(f.a) * v; b.vy = Math.sin(f.a) * v;
+        b.energy -= PLAYER.hopCost;
+      } else if (!f.hop && b.energy >= PLAYER.flickCost) {
+        const v = flickSpeed(f.p, this.sf);
+        b.vx = Math.cos(f.a) * v; b.vy = Math.sin(f.a) * v;
+        b.fling = flingDuration(f.p);
+        b.energy -= PLAYER.flickCost;
+      }
+    }
+    glide(b, DT, this.map, { fling: b.fling > 0, slowed: this.slowed });
+    b.fling = Math.max(0, b.fling - DT);
     collideWalls(b, this.map.walls);
+    collideBumpers(b, this.map.bumpers);
   }
 
   // À chaque commande envoyée (30 par seconde) : numérotation et avance immédiate.
   record(input) {
     this.seq += 1;
     input.s = this.seq;
-    this.pending.push({ s: this.seq, mx: input.mx, my: input.my });
+    this.pending.push({ s: this.seq, fl: input.fl ?? null });
     if (this.pending.length > 60) this.pending.shift();
-    if (input.fl) {
-      // Pichenette : trajectoire décidée par le serveur (chocs, recharge). On suit le serveur
-      // jusqu'à ce qu'il ait traité cette commande et que le personnage soit de nouveau libre.
-      this.pos = null;
-      this.blockSeq = this.seq;
-      return;
-    }
     if (this.pos) {
       this.prev = { x: this.pos.x, y: this.pos.y };
-      this.step(this.pos, input);
+      this.step(this.pos, { fl: input.fl });
       this.stepAt = performance.now();
+      this.energy = this.pos.energy;
     }
   }
 
@@ -51,19 +62,21 @@ export class Predictor {
   reconcile(body, mapId) {
     this.map = MAPS[mapId] ?? MAPS.arena;
     this.pending = this.pending.filter((c) => c.s > body.seq);
-    if (!body.free || body.seq < (this.blockSeq ?? 0)) {
+    this.energy = body.energy;
+    if (!body.free) {
       this.pos = null;
       this.offset = { x: 0, y: 0 };
       return;
     }
-    this.maxSpeed = body.ms;
-    const sim = { x: body.x, y: body.y, vx: body.vx, vy: body.vy };
+    this.sf = body.sf;
+    this.slowed = body.slowed;
+    const sim = { x: body.x, y: body.y, vx: body.vx, vy: body.vy, energy: body.energy, fling: body.fling };
     for (const c of this.pending) this.step(sim, c);
     if (this.pos) {
       const ex = this.pos.x - sim.x;
       const ey = this.pos.y - sim.y;
       if (Math.hypot(ex, ey) < 90) {
-        // Petite erreur : correction lissée à l'affichage plutôt qu'un saut.
+        // Petite erreur (choc avec une autre figurine…) : correction lissée plutôt qu'un saut.
         this.offset.x += ex;
         this.offset.y += ey;
         this.prev = { x: this.prev.x - ex, y: this.prev.y - ey };
@@ -75,10 +88,11 @@ export class Predictor {
       this.prev = { x: sim.x, y: sim.y };
     }
     this.pos = sim;
+    this.energy = sim.energy;
   }
 
   // Position à afficher pour le joueur local, ou null si la prédiction est suspendue
-  // (esquive, glissade, saut, chute, réapparition : on suit alors le serveur).
+  // (renversé, en l'air, sur une banane, en chute : on suit alors le serveur).
   display(frameDt) {
     if (!this.pos || !this.prev) return null;
     const k = Math.min(1, (performance.now() - this.stepAt) / STEP_MS);
@@ -88,6 +102,8 @@ export class Predictor {
     return {
       x: this.prev.x + (this.pos.x - this.prev.x) * k + this.offset.x,
       y: this.prev.y + (this.pos.y - this.prev.y) * k + this.offset.y,
+      vx: this.pos.vx,
+      vy: this.pos.vy,
     };
   }
 }

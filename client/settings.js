@@ -2,12 +2,8 @@
 const KEY = 'pp-settings';
 
 const DEFAULTS = {
-  autoFire: true, // tactile / manette : tirer dès que l'on pousse le stick de visée
-  aimAssist: true, // tactile / manette : légère attraction vers la cible la plus proche de la visée
   shake: 1, // 0, 0.5 ou 1 : intensité des tremblements de l'écran
   haptics: true, // vibrations (Android)
-  leftHanded: false, // inverse les deux sticks tactiles
-  tiltShift: true, // flou de maquette en haut et en bas
   volume: 0.8,
 };
 

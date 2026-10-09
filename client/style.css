@@ -110,17 +110,6 @@ table.res td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 #bottom { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: flex-end; }
 #wallet { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; font-weight: 800; font-size: 14px; line-height: 1.4; white-space: nowrap; }
-#slots, #consumables { display: flex; gap: 6px; }
-.slot { position: relative; width: 62px; height: 62px; background: var(--panel); border: 2px solid var(--line); border-radius: 12px; display: grid; place-items: center; overflow: hidden; cursor: pointer; }
-.slot.small { width: 50px; height: 50px; }
-.slot.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,210,61,.3); }
-.slot.empty { opacity: .45; }
-.slot .ico { font-size: 26px; }
-.slot .key { position: absolute; top: 2px; left: 5px; font-size: 10px; color: var(--muted); font-weight: 800; }
-.slot .ammo { position: absolute; bottom: 2px; right: 5px; font-size: 11px; font-weight: 800; }
-.slot .lvl { position: absolute; top: 2px; right: 5px; font-size: 10px; color: var(--accent); font-weight: 900; }
-.slot .cd { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.6); height: 0; }
-.slot.disabled { filter: grayscale(1); opacity: .5; }
 #shopBtn { align-self: center; }
 
 #shop { position: absolute; right: 10px; top: 56px; bottom: 90px; width: min(380px, 94vw); background: var(--panel); border: 1px solid var(--line); border-radius: 18px; display: flex; flex-direction: column; overflow: hidden; }
@@ -148,33 +137,6 @@ table.res td.num { text-align: right; font-variant-numeric: tabular-nums; }
 #toast.bad { color: var(--bad); }
 #netinfo { position: absolute; bottom: 4px; right: 8px; font-size: 11px; color: var(--muted); pointer-events: none; }
 
-/* ---------- Tactile ---------- */
-#touch { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
-.zone { position: absolute; bottom: 0; top: 30%; pointer-events: auto; }
-#zoneL { left: 0; width: 40%; }
-#zoneR { right: 120px; width: 35%; }
-.stick { position: absolute; width: 120px; height: 120px; border-radius: 50%; border: 2px solid rgba(255,255,255,.25); background: rgba(255,255,255,.06); transform: translate(-50%, -50%); display: none; }
-.stick.on { display: block; }
-.knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.35); transform: translate(-50%, -50%); }
-#zoneR .stick { border-color: rgba(255, 210, 61, .45); }
-#zoneR .knob { background: rgba(255, 210, 61, .5); }
-#touchButtons { position: absolute; right: 10px; bottom: 90px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; pointer-events: auto; }
-.tbtn { width: 54px; height: 54px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); background: rgba(20,26,52,.55); font-size: 20px; font-weight: 900; }
-.tbtn.big { grid-column: span 2; width: 116px; border-radius: 30px; background: rgba(255,77,109,.55); }
-.tbtn:active, .tbtn.on { background: rgba(255,210,61,.6); }
-body.touch #scoreboard { font-size: 11px; min-width: 130px; padding: 5px 7px; }
-body.touch #feed { width: 200px; }
-body.touch .slot { width: 48px; height: 48px; }
-body.touch .slot .ico { font-size: 20px; }
-body.touch #bottom { bottom: 6px; left: 42%; }
-body.touch #dash { display: none; }
-body.touch #shop { bottom: 70px; top: 46px; }
-
-#rotate { display: none; }
-@media (orientation: portrait) and (max-width: 700px) {
-  body.touch.playing #rotate { display: grid; position: fixed; inset: 0; z-index: 50; place-items: center; background: var(--bg); font-size: 22px; font-weight: 800; padding: 20px; text-align: center; }
-}
-
 /* ---------- Étape 1 : réglages, annonces, tactile ---------- */
 #settingsBtn { position: absolute; top: 10px; right: 10px; font-size: 18px; padding: 6px 10px; background: var(--panel); }
 #settingsPanel { position: absolute; top: 56px; right: 10px; width: min(380px, 94vw); max-height: calc(100vh - 80px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; display: grid; gap: 10px; z-index: 30; }
@@ -195,12 +157,6 @@ body.settings-open #feed { display: none; }
 @keyframes pop { 0% { transform: scale(.3); opacity: 0; } 25% { transform: scale(1.15); opacity: 1; } 80% { transform: scale(1); opacity: 1; } 100% { transform: scale(1) translateY(-14px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #announce .a { animation-duration: 1.4s; animation-timing-function: linear; } #timer.hurry { animation: none; } }
 
-.tbtn { position: relative; overflow: hidden; }
-.tbtn .ring { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(rgba(0,0,0,.55) var(--cd, 0%), transparent 0); pointer-events: none; }
-.stick.firing { border-color: rgba(255, 77, 109, .8); box-shadow: 0 0 0 4px rgba(255, 77, 109, .25); }
-body.lefty #zoneL { left: auto; right: 0; }
-body.lefty #zoneR { right: auto; left: 120px; }
-body.lefty #touchButtons { right: auto; left: 10px; }
 /* Le lobby passe au-dessus de la barre d'inventaire (petits écrans en paysage). */
 #lobby { z-index: 10; max-height: calc(100vh - 24px); }
 @media (max-height: 500px) {
@@ -209,34 +165,56 @@ body.lefty #touchButtons { right: auto; left: 10px; }
   #lobby .code { font-size: 26px; }
 }
 
-/* ---------- Disposition tactile compacte ---------- */
-body.touch #topbar { top: 6px; gap: 6px; }
-body.touch #topbar > div { padding: 3px 10px; font-size: 13px; }
-body.touch #scoreboard { top: 6px; left: 6px; font-size: 10px; min-width: 0; padding: 4px 6px; opacity: .92; }
-body.touch #scoreboard .row { grid-template-columns: 10px 1fr auto; gap: 4px; padding: 0; }
-body.touch #scoreboard .row:nth-child(n+6):not(.me) { display: none; }
-body.touch #scoreboard .name { max-width: 88px; }
-body.touch #scoreboard .head { display: none; }
-body.touch #scoreboard .dot { width: 9px; height: 9px; }
-body.touch #feed { top: 44px; right: 6px; width: 170px; gap: 2px; }
-body.touch #feed .item { font-size: 10px; padding: 2px 6px; }
-body.touch #contract { top: 36px !important; font-size: 10px; padding: 2px 8px; border-width: 1px; }
-body.touch #minihud { top: 34px; }
-body.touch #settingsBtn { top: 6px; right: 6px; padding: 3px 7px; font-size: 14px; }
-body.touch #touchButtons { bottom: 10px; gap: 6px; }
-body.touch .tbtn { width: 50px; height: 50px; font-size: 18px; }
-body.touch .tbtn.big { width: 106px; }
-body.touch #wallet { font-size: 11px; padding: 3px 6px; }
-body.touch #center .card { padding: 10px 14px; }
-body.touch #center h2 { font-size: 20px; }
-body.touch #center .big { font-size: 40px; }
-body.touch #announce { top: 18%; }
-body.touch #announce .a { font-size: 18px; }
-body.touch #consumables, body.touch #shopBtn kbd, body.touch .slot .key { display: none; }
-body.touch #shopBtn { padding: 6px 10px; }
+/* ---------- Barre du bas : équipement, bouton d'objet, boutique ---------- */
+#bottom { align-items: center; gap: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+#gear { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 8px; font-size: 20px; }
+#gear:empty { display: none; }
+#gear span { opacity: .55; }
+#gear span.on { opacity: 1; }
+#gear sup { font-size: 9px; color: var(--accent); font-weight: 900; }
+.item-btn { position: relative; width: 74px; height: 74px; border-radius: 50%; border: 3px solid rgba(255,255,255,.35); background: radial-gradient(circle at 35% 30%, #4a5794, #232c52); box-shadow: 0 5px 0 #141a36; display: grid; place-items: center; cursor: pointer; overflow: hidden; touch-action: none; }
+.item-btn .ico { font-size: 34px; }
+.item-btn .count { position: absolute; right: 10px; bottom: 8px; font-size: 13px; color: var(--accent); }
+.item-btn .ring { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(rgba(0,0,0,.6) var(--cd, 0%), transparent 0); pointer-events: none; }
+.item-btn.empty { opacity: .4; }
+.item-btn.on { transform: scale(.92); }
+#shopBtn .lbl { margin-left: 4px; }
 
-/* ---------- Diorama : effet miniature (tilt-shift) ---------- */
-.tilt { position: fixed; left: 0; right: 0; height: 22vh; pointer-events: none; z-index: 1; -webkit-backdrop-filter: blur(2.5px); backdrop-filter: blur(2.5px); }
-#tiltTop { top: 0; -webkit-mask-image: linear-gradient(#000, transparent); mask-image: linear-gradient(#000, transparent); }
-#tiltBottom { bottom: 0; -webkit-mask-image: linear-gradient(transparent, #000); mask-image: linear-gradient(transparent, #000); }
-body.no-tilt .tilt { display: none; }
+/* ---------- Petits écrans : interface minimale ---------- */
+@media (max-width: 700px), (max-height: 520px) {
+  #topbar { top: calc(6px + env(safe-area-inset-top, 0px)); gap: 6px; }
+  #topbar > div { padding: 3px 10px; font-size: 13px; }
+  #scoreboard { top: calc(6px + env(safe-area-inset-top, 0px)); left: 6px; font-size: 10px; min-width: 0; padding: 4px 6px; opacity: .92; }
+  #scoreboard .row { grid-template-columns: 10px 1fr auto; gap: 4px; padding: 0; }
+  #scoreboard .row:nth-child(n+5):not(.me) { display: none; }
+  #scoreboard .name { max-width: 80px; }
+  #scoreboard .head { display: none; }
+  #scoreboard .dot { width: 9px; height: 9px; }
+  #feed { top: 44px; right: 6px; width: 170px; gap: 2px; }
+  #feed .item { font-size: 10px; padding: 2px 6px; }
+  #contract { top: 36px; font-size: 10px; padding: 2px 8px; border-width: 1px; max-width: 70vw; }
+  #minihud { top: 34px; }
+  #settingsBtn { top: calc(6px + env(safe-area-inset-top, 0px)); right: 6px; padding: 3px 7px; font-size: 14px; }
+  #wallet { font-size: 11px; padding: 3px 6px; }
+  #gear { font-size: 16px; }
+  #shopBtn .lbl { display: none; }
+  #center .card { padding: 10px 14px; }
+  #center h2 { font-size: 20px; }
+  #center .big { font-size: 40px; }
+  #announce { top: 18%; }
+  #announce .a { font-size: 18px; white-space: normal; max-width: 90vw; }
+  #shop { left: 6px; right: 6px; width: auto; top: 44px; bottom: 100px; }
+}
+
+/* ---------- Téléphone en vertical ---------- */
+body.portrait #topbar { left: auto; right: 44px; transform: none; flex-direction: column; align-items: flex-end; gap: 3px; }
+body.portrait #feed { top: auto; bottom: 110px; left: 50%; right: auto; transform: translateX(-50%); width: min(300px, 86vw); }
+body.portrait #contract { top: auto; bottom: 96px; }
+body.portrait #minihud { top: 70px; width: 86vw; }
+body.portrait #bottom { width: calc(100vw - 20px); justify-content: space-between; }
+body.portrait .item-btn { width: 82px; height: 82px; }
+body.portrait #lobby { top: auto; bottom: 110px; transform: translateX(-50%); }
+body.portrait #lobby .players { grid-template-columns: 1fr 1fr; }
+/* Les glissés sur l'arène ne doivent jamais être bloqués par l'interface. */
+#bottom { pointer-events: none; }
+#bottom > * { pointer-events: auto; }

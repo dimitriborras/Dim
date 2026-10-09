@@ -254,7 +254,7 @@ export class GameRoom {
       inv: InventorySystem.view(p.inv, t),
       channel: p.channel ? { item: p.channel.itemId, progress: Math.min(1, (t - p.channel.start) / (p.channel.until - p.channel.start)) } : null,
       contract: p.contract,
-      dash: Math.max(0, (p.flickReadyAt ?? 0) - t),
+      energy: Math.round((p.energy ?? 0) * 100) / 100,
       respawn: p.state === 'dead' ? Math.max(0, p.respawnAt - t) : 0,
       inMatch: p.inMatch,
       // État physique exact du joueur, pour que son client rejoue ses commandes non confirmées.
@@ -264,9 +264,13 @@ export class GameRoom {
         y: Math.round(p.y * 10) / 10,
         vx: Math.round(p.vx * 10) / 10,
         vy: Math.round(p.vy * 10) / 10,
-        ms: p.maxSpeed ?? 0,
-        free: p.state === 'alive' && !this.match.world.rules.frozen && t >= (p.flingUntil ?? 0) && t >= (p.toppleUntil ?? 0)
-          && t >= (p.slipUntil ?? 0) && t >= (p.airborneUntil ?? 0),
+        energy: Math.round((p.energy ?? 0) * 1000) / 1000,
+        fling: Math.max(0, Math.round(((p.flingUntil ?? 0) - t) * 1000) / 1000),
+        sf: (p.speedFactor ?? 1) * (t < (p.slowUntil ?? 0) && t >= (p.bubbleUntil ?? 0) ? 0.6 : 1),
+        slowed: t < (p.slowUntil ?? 0) && t >= (p.bubbleUntil ?? 0),
+        // Prédiction possible : ni renversée, ni en l'air, ni en glissade de banane, ni en achat.
+        free: p.state === 'alive' && !this.match.world.rules.frozen && !p.channel
+          && t >= (p.toppleUntil ?? 0) && t >= (p.airborneUntil ?? 0) && t >= (p.slipUntil ?? 0),
       },
     };
   }

@@ -5,7 +5,7 @@ import {
 import { movingPlatformRect } from '../maps.js';
 import { CombatSystem } from './CombatSystem.js';
 import { InventorySystem } from './InventorySystem.js';
-import { normalizeInput, inHazard, steerOnGround, collideWalls } from './movement.js';
+import { inHazard, glide, collideWalls, collideBumpers, flickSpeed, flingDuration } from './movement.js';
 
 const DEFAULT_RULES = {
   damage: true,
@@ -228,6 +228,7 @@ export class World {
     const t = this.time;
     if (p.state === 'dead') {
       p.actions.length = 0; // pas d'actions en attente qui partiraient à la réapparition
+      p.pendingFlick = null;
       return;
     }
     InventorySystem.update(p, t);
@@ -238,56 +239,34 @@ export class World {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.actions.length = 0;
+      p.pendingFlick = null;
       return;
     }
 
-    const input = p.input;
-    if (Number.isFinite(input.aim)) p.aim = input.aim;
-    const moving = Math.abs(input.mx) > 0.05 || Math.abs(input.my) > 0.05;
-    const { mx, my } = normalizeInput(input.mx, input.my);
-    if (moving) p.moveAngle = Math.atan2(my, mx);
-
     const frozen = this.rules.frozen;
-    const slipping = t < p.slipUntil || t < p.toppleUntil; // glissade ou figurine renversée : plus de contrôle
+    const toppled = t < p.toppleUntil;
+    const slipping = t < p.slipUntil;
     const airborne = t < p.airborneUntil;
     const busy = !!p.channel;
+    const stunned = toppled || slipping;
+    p.energy = Math.min(PLAYER.energyMax, (p.energy ?? PLAYER.energyMax) + PLAYER.energyRegen * dt);
 
-    // Actions ponctuelles (esquive, gadgets, consommables, sélection d'emplacement).
+    // Actions ponctuelles (objet, sélection d'emplacement) puis pichenette.
     const actions = p.actions.splice(0);
-    // Changer d'arme reste possible pendant une glissade ou un achat ; le reste attend.
     const isSwitch = (a) => a === 'wn' || a === 'wp' || (a[0] === 's' && a.length === 2 && ITEMS_WEAPON_SWITCH(p, a));
-    if (frozen || slipping || busy) {
-      for (const a of actions) if (isSwitch(a)) this.doAction(p, a, moving);
+    for (const a of actions) {
+      if (frozen || stunned || busy) { if (isSwitch(a)) this.doAction(p, a); } else this.doAction(p, a);
     }
-    if (!frozen && !slipping && !busy) {
-      for (const a of actions) this.doAction(p, a, moving);
-      if (p.pendingFlick) this.flick(p, p.pendingFlick.a, p.pendingFlick.p);
-      if (input.fire && t >= p.flingUntil) InventorySystem.fire(p, this);
+    if (p.pendingFlick && !frozen && !stunned && !busy && !airborne) {
+      const f = p.pendingFlick;
+      if (f.hop) this.hop(p, f.a);
+      else this.flick(p, f.a, f.p);
     }
     p.pendingFlick = null;
 
-    // Déplacement.
-    let maxSp = PLAYER.speed;
-    if (t < p.slowUntil && t >= p.bubbleUntil) maxSp *= 0.5;
-    if (busy) maxSp *= SHOP.combatMoveFactor;
-    if (p.speedFactor) maxSp *= p.speedFactor;
-    p.maxSpeed = maxSp;
-    const dx = frozen ? 0 : mx * maxSp;
-    const dy = frozen ? 0 : my * maxSp;
-
-    if (t < p.flingUntil) {
-      // Lancé par la pichenette : on file presque sans frottement.
-      const k = Math.exp(-0.8 * dt);
-      p.vx *= k; p.vy *= k;
-    } else if (slipping) {
-      const k = Math.exp((t < p.toppleUntil ? -2.2 : -0.5) * dt);
-      p.vx *= k; p.vy *= k;
-    } else if (airborne) {
-      p.vx += dx * 0.6 * dt;
-      p.vy += dy * 0.6 * dt;
-    } else {
-      steerOnGround(p, frozen ? 0 : mx, frozen ? 0 : my, maxSp, this.inHazard(p.x, p.y), dt);
-    }
+    // Glissade de palet.
+    const speedBefore = Math.hypot(p.vx, p.vy);
+    glide(p, dt, this.map, { fling: t < p.flingUntil, toppled, airborne, slowed: t < p.slowUntil && t >= p.bubbleUntil });
 
     // Les plateformes mobiles transportent ceux qui sont dessus.
     if (!airborne) {
@@ -299,24 +278,59 @@ export class World {
         }
       }
     }
+    this.collideStatic(p, speedBefore);
 
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    this.collideStatic(p);
+    // Posée : la figurine vise et tire seule sur l'adversaire visible le plus proche.
+    p.settled = Math.hypot(p.vx, p.vy) < PLAYER.settledSpeed;
+    if (!frozen && !stunned && !busy && !airborne && p.settled) this.autoFire(p);
+  }
+
+  autoFire(p) {
+    let best = null;
+    let bestD = PLAYER.autoFireRange;
+    const t = this.time;
+    for (const o of this.players) {
+      if (o === p || o.state !== 'alive' || t < o.invulnUntil) continue;
+      const d = dist(p, o);
+      if (d < bestD && this.lineOfSight(p, o)) { bestD = d; best = o; }
+    }
+    for (const o of this.decoys) {
+      if (o.owner === p.id || o.dead) continue;
+      const d = dist(p, o);
+      if (d < bestD && this.lineOfSight(p, o)) { bestD = d; best = o; }
+    }
+    if (!best) return;
+    // Visée légèrement anticipée sur la cible en mouvement.
+    const lead = (bestD / 950) * 0.5;
+    p.aim = Math.atan2(best.y + (best.vy ?? 0) * lead - p.y, best.x + (best.vx ?? 0) * lead - p.x);
+    InventorySystem.autoFire(p, this, best, bestD);
   }
 
   // Pichenette : se lancer comme une bille. Percuter quelqu'un lui transmet l'élan.
   flick(p, angle, power) {
     const t = this.time;
-    if (t < p.flickReadyAt || this.rules.frozen || !Number.isFinite(angle)) return false;
+    if (this.rules.frozen || !Number.isFinite(angle)) return false;
+    if ((p.energy ?? 0) < PLAYER.flickCost) return false;
     const pw = Math.max(0, Math.min(1, power));
-    const speed = PLAYER.flickMinSpeed + (PLAYER.flickMaxSpeed - PLAYER.flickMinSpeed) * pw;
-    p.vx = Math.cos(angle) * speed;
-    p.vy = Math.sin(angle) * speed;
-    p.flingUntil = t + PLAYER.flickTime + 0.3 * pw;
-    p.flickReadyAt = t + PLAYER.flickCooldown;
-    p.channel = null;
+    const factor = (p.speedFactor ?? 1) * (t < p.slowUntil && t >= p.bubbleUntil ? 0.6 : 1);
+    const v = flickSpeed(pw, factor);
+    p.vx = Math.cos(angle) * v;
+    p.vy = Math.sin(angle) * v;
+    p.flingUntil = t + flingDuration(pw);
+    p.energy -= PLAYER.flickCost;
+    p.aim = angle;
     this.emit('flick', { id: p.id, power: Math.round(pw * 100) / 100 });
+    return true;
+  }
+
+  // Petite tape : petit bond pour se placer finement.
+  hop(p, angle) {
+    if (this.rules.frozen || !Number.isFinite(angle) || (p.energy ?? 0) < PLAYER.hopCost) return false;
+    const v = PLAYER.hopSpeed * (p.speedFactor ?? 1);
+    p.vx = Math.cos(angle) * v;
+    p.vy = Math.sin(angle) * v;
+    p.energy -= PLAYER.hopCost;
+    this.emit('hop', { id: p.id });
     return true;
   }
 
@@ -328,10 +342,9 @@ export class World {
     p.channel = null;
   }
 
-  doAction(p, a, moving) {
-    if (a === 'dash') {
-      // Appui bref (clavier, ancien client) : petite pichenette dans la direction du mouvement.
-      this.flick(p, moving ? p.moveAngle : p.aim, 0.45);
+  doAction(p, a) {
+    if (a === 'item') {
+      InventorySystem.useItem(p, this);
     } else if (a === 'gadget') {
       InventorySystem.useGadget(p, this);
     } else if (a === 'c0' || a === 'c1') {
@@ -343,23 +356,13 @@ export class World {
     }
   }
 
-  collideStatic(p) {
-    const r = PLAYER.radius;
-    collideWalls(p, this.map.walls);
+  collideStatic(p, speedBefore = 0) {
+    if (collideWalls(p, this.map.walls) && speedBefore > 300) this.emit('thud', { id: p.id, x: Math.round(p.x), y: Math.round(p.y) });
     if (this.time < p.airborneUntil) return;
-    for (const b of this.map.bumpers) {
-      const d = Math.hypot(p.x - b.x, p.y - b.y);
-      if (d < b.r + r && d > 0.01) {
-        const nx = (p.x - b.x) / d;
-        const ny = (p.y - b.y) / d;
-        p.x = b.x + nx * (b.r + r);
-        p.y = b.y + ny * (b.r + r);
-        p.vx = nx * 720;
-        p.vy = ny * 720;
-        p.flingUntil = 0;
-        this.topple(p);
-        this.emit('bump', { x: b.x, y: b.y });
-      }
+    const b = collideBumpers(p, this.map.bumpers);
+    if (b) {
+      p.flingUntil = 0;
+      this.emit('bump', { x: b.x, y: b.y });
     }
     for (const s of this.map.springs) {
       if (pointInRect(p.x, p.y, s)) {
@@ -397,10 +400,19 @@ export class World {
         const aFling = t < a.flingUntil;
         const bFling = t < b.flingUntil;
         if (!aFling && !bFling) {
-          // Simple bousculade : petit rebond mou, sans dégâts.
-          const jSoft = vn * 0.6;
-          a.vx -= nx * jSoft * 0.5; a.vy -= ny * jSoft * 0.5;
-          b.vx += nx * jSoft * 0.5; b.vy += ny * jSoft * 0.5;
+          // Deux palets qui glissent : rebond élastique, sans dégâts.
+          const jSoft = ((1 + PLAYER.restitution) * vn) / 2;
+          a.vx -= nx * jSoft; a.vy -= ny * jSoft;
+          b.vx += nx * jSoft; b.vy += ny * jSoft;
+          if (vn > 200) this.emit('clack', { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2), power: Math.round(jSoft) });
+          if (Math.hypot(a.vx, a.vy) > 150 || Math.hypot(b.vx, b.vy) > 150) {
+            // L'attaquant est le plus rapide avant le choc : il est crédité d'une éventuelle chute.
+            // Après l'échange d'élan, c'est la victime qui file : l'autre était l'attaquant.
+            const victim = Math.hypot(a.vx, a.vy) > Math.hypot(b.vx, b.vy) ? a : b;
+            const attacker = victim === a ? b : a;
+            victim.lastHitBy = attacker.id;
+            victim.lastHitAt = t;
+          }
           continue;
         }
         // Le « frappeur » est celui qui est lancé (le plus rapide si les deux le sont).
@@ -564,6 +576,7 @@ export class World {
           t < p.slipUntil ? 'l' : '',
           t < p.airborneUntil ? 'j' : '',
           t < p.flingUntil ? 'f' : '',
+          p.settled ? '' : 'm',
           t < p.toppleUntil ? 'k' : '',
           p.championShield ? 'c' : '',
           p.channel ? 'p' : '',
@@ -583,7 +596,7 @@ export function resetBody(p, pos) {
   Object.assign(p, {
     x: pos.x, y: pos.y, vx: 0, vy: 0,
     hp: PLAYER.maxHp, state: 'alive', fallUntil: 0, respawnAt: 0,
-    invulnUntil: 0, flingUntil: 0, flickReadyAt: 0, toppleUntil: 0, pendingFlick: null, slowUntil: 0, slipUntil: 0,
+    invulnUntil: 0, flingUntil: 0, toppleUntil: 0, pendingFlick: null, energy: PLAYER.energyMax, settled: true, slowUntil: 0, slipUntil: 0,
     airborneUntil: 0, bubbleUntil: 0, lastHitBy: null, lastHitAt: -99,
     moveAngle: null, speedFactor: 1,
   });

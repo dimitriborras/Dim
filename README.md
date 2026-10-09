@@ -50,7 +50,7 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   `cloudflared tunnel --url http://localhost:8080`, puis partager l'adresse `https://…` obtenue
   (les WebSocket passent automatiquement en `wss`).
 - **Port déjà utilisé** : `PORT=3000 npm start` (Windows PowerShell : `$env:PORT=3000; npm start`).
-- `npm test` lance les 24 tests (économie, anti-triche, phases, réseau).
+- `npm test` lance les 26 tests (économie, anti-triche, phases, réseau).
 
 - **Créer une salle** : un code à 4 lettres et un lien à partager s'affichent (aucun compte nécessaire).
 - **Rejoindre** : code ou lien `?room=CODE`. En cas de coupure, le client se reconnecte seul
@@ -58,27 +58,27 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
 - **Entraînement solo** : toute la simulation tourne dans le navigateur, avec 5 bots, sans serveur.
 - L'hôte peut ajouter ou retirer des bots et choisir 3, 5 ou 8 manches.
 
-| PC (clavier / souris) | Mobile (paysage) | Manette |
-| --- | --- | --- |
-| ZQSD / WASD : déplacement | Pouce gauche : stick flottant | Stick gauche : déplacement |
-| Souris : visée, clic gauche : tir | Pouce droit : visée, tir automatique au-delà de la moitié | Stick droit : visée (tir automatique), gâchettes : tir |
-| Clic droit / E : gadget | Boutons qui affichent l'objet équipé et sa recharge | B : gadget |
-| Espace (maintenir, relâcher) : pichenette vers la souris | 🪀 : tirer comme une fronde | A (maintenir) : pichenette |
-| Molette, 1 2 3 : armes | 🔁 : arme suivante | LB / RB : armes |
-| R / F : consommables | Icône du consommable | X / Y : consommables |
-| B : boutique, Tab : scores, M : son | ⚙️ : réglages | Start : boutique, Select : scores |
+**Un seul doigt, sur tous les appareils** (téléphone en vertical ou en paysage, souris, manette) :
 
-Le bouton ⚙️ règle le tir automatique, l'aide à la visée (tactile et manette, jamais à la souris), les vibrations,
-le mode gaucher, l'intensité des tremblements et le volume.
+- poser le doigt n'importe où, tirer en arrière, relâcher : **pichenette**, la figurine part comme une bille ;
+  la trajectoire exacte s'affiche avant de lâcher (rebonds marqués, croix rouge si elle finirait dans le vide) ;
+- petite tape : petit bond vers l'endroit touché ;
+- posée, la figurine **tire toute seule** sur l'adversaire visible le plus proche ;
+- bouton rond (ou E / Espace) : utiliser son objet ; B : boutique ; Tab : scores ;
+- manette : stick gauche pour viser, A maintenu puis relâché pour la pichenette, B pour l'objet.
 
 ## Physique et présentation
 
-- **Diorama** : le bureau d'une chambre d'enfant, la nuit, vu de trois quarts, avec un effet miniature
-  (désactivable dans ⚙️). La simulation reste en 2D vue de dessus ; seul le rendu projette la scène.
-- **Pichenette** : on tend l'élastique puis on relâche pour se lancer. Percuter une figurine lui transmet
-  presque toute la vitesse, comme au billard, et la chute éventuelle est créditée au lanceur. Recharge de 2,4 s.
-- **Figurines lestées** : un coup fort (gant, bombe, pichenette, bumper) les renverse ; elles roulent,
-  perdent le contrôle 0,75 s, puis se redressent en oscillant. Les chocs entre figurines rebondissent.
+- **Palet / bille de billard** : on ne marche pas, on se lance, on glisse et on s'arrête en douceur. Les briques
+  renvoient comme des bandes de billard, les balles en caoutchouc relancent. Trois charges de pichenette se
+  rechargent en continu (1,25 par seconde) ; la petite tape coûte un tiers de charge.
+- **Chocs** : percuter une figurine lui transmet presque toute la vitesse (berceau de Newton) ; une chute qui
+  suit est créditée à l'attaquant. Seul un très gros choc renverse une figurine (0,6 s sans contrôle).
+- **Réactivité** : la physique de sa propre figurine (pichenette, rebonds) est calculée immédiatement sur
+  l'appareil puis recalée sur le serveur, même avec du ping (`client/predict.js`, `shared/game/movement.js`).
+- **Diorama** : le bureau d'une chambre d'enfant, la nuit, vu de trois quarts.
+- **Performance** : décor dessiné une seule fois, briques, balles, figurines et noms pré-dessinés, résolution
+  qui baisse toute seule si l'appareil peine. Objectif : 60 images par seconde sur un téléphone moyen.
 
 ## Boucle de partie
 

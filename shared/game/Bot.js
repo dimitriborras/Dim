@@ -1,238 +1,160 @@
 import { ITEMS } from '../items.js';
 import { PLAYER } from '../constants.js';
-import { angleDiff, dist } from '../geometry.js';
+import { dist } from '../geometry.js';
+import { powerForDistance, simulateFlick } from './movement.js';
 
 const BOT_NAMES = ['Robo-Rex', 'Capitaine Clic', 'Mlle Vis', 'Bidule', 'Pastille', 'Gros Boulon', 'Zigzag', 'Tuba'];
 export const botName = (i) => BOT_NAMES[i % BOT_NAMES.length];
 
-// IA simple qui produit les mêmes entrées qu'un joueur humain (aucun accès privilégié
-// à la simulation) : sert à tester seul et à simuler des parties complètes.
+// IA qui joue avec les mêmes gestes qu'un humain : une pichenette (angle + puissance)
+// ou une petite tape quand sa figurine est posée. Le tir est automatique pour tout le monde.
 export class BotBrain {
   constructor(rng) {
     this.rng = rng;
     this.wp = 0;
-    this.strafe = rng.next() < 0.5 ? 1 : -1;
-    this.strafeSwitch = 0;
-    this.aimErr = 0;
-    this.wander = null;
+    this.nextAt = 0;
     this.skill = rng.range(0.55, 0.9);
+    this.side = rng.next() < 0.5 ? 1 : -1;
   }
 
   think(p, world, mode, extra = {}) {
-    const input = { mx: 0, my: 0, aim: p.aim, fire: false };
-    p.input = input;
+    p.input = { mx: 0, my: 0, aim: p.aim, fire: false };
     if (p.state !== 'alive') return;
     const t = world.time;
-    this.aimErr = Math.max(-0.25, Math.min(0.25, this.aimErr + this.rng.range(-0.05, 0.05)));
-    if (t > this.strafeSwitch) {
-      this.strafe *= -1;
-      this.strafeSwitch = t + this.rng.range(0.6, 1.8);
-    }
+    if (mode !== 'safe' && mode !== 'race' && mode !== 'coins') this.useItems(p, world);
+    const speed = Math.hypot(p.vx, p.vy);
+    if (t < this.nextAt || speed > 70 || (p.energy ?? 0) < PLAYER.flickCost) return;
+    // Temps de réaction humain, plus long pour les bots moins doués.
+    this.nextAt = t + this.rng.range(0.12, 0.5) / this.skill;
 
-    if (mode === 'race') return this.race(p, world, input);
-    if (mode === 'coins') return this.coins(p, world, input);
-    if (mode === 'safe') return this.idle(p, world, input);
-    return this.fight(p, world, input, mode, extra);
+    let goal = null;
+    if (mode === 'race') goal = this.raceGoal(p, world);
+    else if (mode === 'coins') goal = this.coinGoal(p, world);
+    else if (mode === 'safe' || mode === 'lobby') goal = this.rng.next() < (mode === 'lobby' ? 0.25 : 0.12) ? this.wanderGoal(p, world) : null;
+    else goal = this.fightGoal(p, world, extra);
+    if (!goal) return;
+    this.launch(p, world, goal);
   }
 
-  // Choisit, parmi 16 directions, la plus proche de la direction voulue qui ne mène pas au vide.
-  steer(p, world, angle, strength = 1) {
-    let best = null;
-    let bestScore = -Infinity;
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * Math.PI * 2;
-      const cx = Math.cos(a);
-      const cy = Math.sin(a);
-      let safe = true;
-      for (const d of [30, 60, 95]) {
-        if (!world.isGround(p.x + cx * d, p.y + cy * d)) { safe = false; break; }
+  // Lance la figurine vers `goal` en vérifiant que la trajectoire ne finit pas dans le vide.
+  launch(p, world, goal) {
+    const d = dist(p, goal);
+    const base = Math.atan2(goal.y - p.y, goal.x - p.x);
+    if (d < 110 && !goal.push) {
+      if (this.safe(p, world, base, 0, { hop: true })) p.pendingFlick = { a: base, p: 0, hop: true };
+      return;
+    }
+    const want = Math.min(1, powerForDistance(goal.push ? d + 160 : d) + this.rng.range(-0.06, 0.06));
+    const tries = [0, 0.18, -0.18, 0.4, -0.4, 0.75, -0.75];
+    for (const scale of [1, 0.75, 0.5]) {
+      const power = Math.max(0, want * scale);
+      for (const off of tries) {
+        const a = base + off * this.side;
+        // Une poussée s'arrête sur la cible : on ne vérifie le chemin que jusqu'à elle.
+        const until = goal.push && off === 0 ? goal : null;
+        if (this.safe(p, world, a, 0, { power, until })) {
+          p.pendingFlick = { a, p: power };
+          return;
+        }
       }
-      if (!safe) continue;
-      const blocked = world.overlapsWall(p.x + cx * 30, p.y + cy * 30, PLAYER.radius);
-      const score = Math.cos(angleDiff(a, angle)) - (blocked ? 0.8 : 0);
-      if (score > bestScore) { bestScore = score; best = a; }
     }
-    if (best === null) {
-      const c = world.map.center ?? { x: world.map.width / 2, y: world.map.height / 2 };
-      best = Math.atan2(c.y - p.y, c.x - p.x);
-    }
-    return { mx: Math.cos(best) * strength, my: Math.sin(best) * strength };
   }
 
-  race(p, world, input) {
+  // Simule la pichenette avec la vraie physique (rebonds compris) : finit-elle sur la table ?
+  safe(p, world, a, reachOrPower, opts = {}) {
+    const springAt = (x, y) => world.map.springs.some((s) => x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h);
+    const sim = simulateFlick(p, a, opts.power ?? 0, world.map, {
+      hop: opts.hop,
+      factor: p.speedFactor ?? 1,
+      isGround: (x, y) => world.isGround(x, y),
+      stopAt: (x, y) => springAt(x, y) || (opts.until && Math.hypot(x - opts.until.x, y - opts.until.y) < PLAYER.radius * 2),
+    });
+    if (sim.outcome === 'fall') return false;
+    if (sim.outcome === 'stop' && world.map.hazardEdges && world.inHazard(sim.end.x, sim.end.y)) return false;
+    void reachOrPower;
+    return true;
+  }
+
+  raceGoal(p, world) {
     const wps = world.map.waypoints;
-    if (!wps) return;
-    // Après une réapparition, reprendre au premier point devant soi.
-    if (this.wp > 0 && p.x < wps[this.wp - 1].x - 60) {
-      this.wp = Math.max(0, wps.findIndex((w) => w.x > p.x - 20));
-    }
-    let w = wps[Math.min(this.wp, wps.length - 1)];
-    if (dist(p, w) < 45 && this.wp < wps.length - 1) {
-      this.wp += 1;
-      w = wps[this.wp];
-    }
-    const a = Math.atan2(w.y - p.y, w.x - p.x);
-    const airborne = world.time < p.airborneUntil;
-    const onSpring = world.map.springs.some((s) => Math.abs(s.x + s.w / 2 - w.x) < 40 && Math.abs(s.y + s.h / 2 - w.y) < 40);
-    const m = airborne || onSpring ? { mx: Math.cos(a), my: Math.sin(a) } : this.steer(p, world, a);
-    input.mx = m.mx;
-    input.my = m.my;
-    this.harass(p, world, input, 260, 0.25);
+    if (!wps) return null;
+    if (this.wp > 0 && p.x < wps[this.wp - 1].x - 80) this.wp = Math.max(0, wps.findIndex((w) => w.x > p.x - 20));
+    while (this.wp < wps.length - 1 && (dist(p, wps[this.wp]) < 70 || p.x > wps[this.wp].x + 40)) this.wp += 1;
+    return wps[this.wp];
   }
 
-  coins(p, world, input) {
+  coinGoal(p, world) {
     let best = null;
     let bestScore = Infinity;
     for (const pk of world.pickups) {
       const s = dist(p, pk) / (pk.value ?? 1);
       if (s < bestScore) { bestScore = s; best = pk; }
     }
-    if (best) {
-      const m = this.steer(p, world, Math.atan2(best.y - p.y, best.x - p.x));
-      input.mx = m.mx;
-      input.my = m.my;
-    } else {
-      this.idle(p, world, input);
-    }
-    this.harass(p, world, input, 320, 0.45);
+    return best ? { x: best.x, y: best.y } : this.wanderGoal(p, world);
   }
 
-  idle(p, world, input) {
-    const t = world.time;
-    if (!this.wander || t > this.wander.until || dist(p, this.wander) < 30) {
-      const sp = world.map.spawns[Math.floor(this.rng.next() * world.map.spawns.length)];
-      this.wander = { x: sp.x + this.rng.range(-80, 80), y: sp.y + this.rng.range(-80, 80), until: t + this.rng.range(2, 4) };
-    }
-    const m = this.steer(p, world, Math.atan2(this.wander.y - p.y, this.wander.x - p.x), 0.6);
-    input.mx = m.mx;
-    input.my = m.my;
+  wanderGoal(p, world) {
+    const sp = world.map.spawns[Math.floor(this.rng.next() * world.map.spawns.length)];
+    return { x: sp.x + this.rng.range(-60, 60), y: sp.y + this.rng.range(-60, 60) };
   }
 
-  // Tir opportuniste sur le joueur visible le plus proche.
-  harass(p, world, input, range, rate) {
-    const target = this.nearestEnemy(p, world, range);
-    if (!target) return;
-    input.aim = Math.atan2(target.y - p.y, target.x - p.x) + this.aimErr;
-    input.fire = this.rng.next() < rate;
-  }
-
-  nearestEnemy(p, world, range = Infinity, includeDecoys = false) {
+  nearestEnemy(p, world, range = Infinity) {
     let best = null;
     let bestD = range;
-    const pool = includeDecoys ? [...world.players, ...world.decoys] : world.players;
-    for (const o of pool) {
-      if (o === p || o.owner === p.id || (o.state && o.state !== 'alive') || o.dead) continue;
+    for (const o of world.players) {
+      if (o === p || o.state !== 'alive') continue;
       const d = dist(p, o);
-      if (d < bestD && world.lineOfSight(p, o)) { bestD = d; best = o; }
+      if (d < bestD) { bestD = d; best = o; }
     }
     return best;
   }
 
-  fight(p, world, input, mode, extra) {
-    const t = world.time;
-    const practice = mode === 'lobby';
+  fightGoal(p, world, extra) {
     const crown = extra.crown;
-    let goal = null;
-    let target = this.nearestEnemy(p, world, 700, true);
-
     if (crown) {
       if (crown.holder === p.id) {
-        const threat = this.nearestEnemy(p, world, 500);
-        if (threat) {
-          const away = Math.atan2(p.y - threat.y, p.x - threat.x);
-          const c = world.map.center;
-          const home = Math.atan2(c.y - p.y, c.x - p.x);
-          goal = { angle: away + angleDiff(home, away) * 0.3 };
-        }
-      } else if (crown.holder) {
+        const threat = this.nearestEnemy(p, world, 420);
+        if (!threat) return null;
+        const c = world.map.center;
+        const ax = p.x - threat.x + (c.x - p.x) * 0.4;
+        const ay = p.y - threat.y + (c.y - p.y) * 0.4;
+        const l = Math.hypot(ax, ay) || 1;
+        return { x: p.x + (ax / l) * 260, y: p.y + (ay / l) * 260 };
+      }
+      if (crown.holder) {
         const h = world.players.find((o) => o.id === crown.holder);
-        if (h) { goal = { x: h.x, y: h.y, keep: 140 }; if (world.lineOfSight(p, h)) target = h; }
+        if (h) return { x: h.x, y: h.y, push: true };
       } else if (crown.pos) {
-        goal = { x: crown.pos.x, y: crown.pos.y, keep: 0 };
+        return { x: crown.pos.x, y: crown.pos.y };
       }
     }
-    if (!goal && extra.championId && extra.championId !== p.id && this.skill > 0.7) {
-      const champ = world.players.find((o) => o.id === extra.championId && o.state === 'alive');
-      if (champ) goal = { x: champ.x, y: champ.y, keep: 260 };
+    let target = this.nearestEnemy(p, world, 700);
+    if (extra.championId && extra.championId !== p.id && this.skill > 0.7) {
+      target = world.players.find((o) => o.id === extra.championId && o.state === 'alive') ?? target;
     }
-
-    const inv = p.inv;
-    const gloveIdx = inv.slots.findIndex((s) => s?.id === 'spring_glove');
-    const glueIdx = inv.slots.findIndex((s) => s?.id === 'glue_launcher');
-    let keep = 260;
-    if (target) {
-      const d = dist(p, target);
-      if (gloveIdx > 0 && d < 300) keep = 50;
-      if (!goal) goal = { x: target.x, y: target.y, keep };
-    }
-
-    let angle;
-    if (goal?.angle !== undefined) angle = goal.angle;
-    else if (goal) {
-      const toward = Math.atan2(goal.y - p.y, goal.x - p.x);
-      const d = dist(p, goal);
-      const k = goal.keep ?? keep;
-      if (d > k + 40) angle = toward + this.strafe * 0.35;
-      else if (d < k - 40) angle = toward + Math.PI + this.strafe * 0.4;
-      else angle = toward + (Math.PI / 2) * this.strafe;
-    } else {
-      return this.idle(p, world, input);
-    }
-    const m = this.steer(p, world, angle);
-    input.mx = m.mx;
-    input.my = m.my;
-
-    if (!target) return;
-    const d = dist(p, target);
-    const lead = (d / 950) * 0.6;
-    const tx = target.x + (target.vx ?? 0) * lead;
-    const ty = target.y + (target.vy ?? 0) * lead;
-    input.aim = Math.atan2(ty - p.y, tx - p.x) + this.aimErr * (1.2 - this.skill);
-
-    // Choix d'arme.
-    if (gloveIdx > 0 && d < 95) this.select(p, gloveIdx);
-    else if (glueIdx > 0 && d > 180 && !(t < target.slowUntil) && this.rng.next() < 0.05) this.select(p, glueIdx);
-    else if (inv.active !== 0 && (inv.active !== gloveIdx || d > 140) && this.rng.next() < 0.1) this.select(p, 0);
-    input.fire = d < 650 && this.rng.next() < (practice ? 0.25 : 0.55 + this.skill * 0.3);
-
-    // Pichenette opportuniste : se lancer sur une cible proche, surtout si elle est près du bord.
-    const nearEdge = world.inHazard(target.x, target.y) || !world.isGround(target.x + (target.x - p.x) * 0.5, target.y + (target.y - p.y) * 0.5);
-    if (target.state && d < 280 && t >= (p.flickReadyAt ?? 0) && this.rng.next() < (nearEdge ? 0.08 : 0.015) * this.skill) {
-      p.pendingFlick = { a: Math.atan2(target.y - p.y, target.x - p.x), p: Math.min(1, 0.45 + d / 400) };
-    }
-
-    if (practice) return;
-    this.useItems(p, world, d, target);
+    if (!target) return this.wanderGoal(p, world);
+    const d = dist(p, target) || 1;
+    // Cible près du bord ou du trou : on fonce dessus pour la pousser dans le vide.
+    const beyond = { x: target.x + ((target.x - p.x) / d) * 120, y: target.y + ((target.y - p.y) / d) * 120 };
+    const pushable = world.inHazard(target.x, target.y) || !world.isGround(beyond.x, beyond.y);
+    if (d < 420 && (pushable || this.rng.next() < 0.25 * this.skill)) return { x: target.x, y: target.y, push: true };
+    // Déjà à bonne distance de tir : on reste posé pour tirer.
+    if (d > 260 && d < 520 && world.lineOfSight(p, target)) return null;
+    const ang = Math.atan2(p.y - target.y, p.x - target.x) + this.side * this.rng.range(0.3, 0.9);
+    return { x: target.x + Math.cos(ang) * 320, y: target.y + Math.sin(ang) * 320 };
   }
 
-  select(p, idx) {
-    if (p.inv.active !== idx) p.actions.push(`s${idx}`);
-  }
-
-  useItems(p, world, d, target) {
+  useItems(p, world) {
     const r = this.rng.next();
-    const incoming = world.projectiles.find((pr) => {
+    const incoming = world.projectiles.some((pr) => {
       if (pr.owner === p.id) return false;
-      const dd = Math.hypot(pr.x - p.x, pr.y - p.y);
-      if (dd > 160) return false;
+      if (Math.hypot(pr.x - p.x, pr.y - p.y) > 160) return false;
       return (p.x - pr.x) * pr.vx + (p.y - pr.y) * pr.vy > 0;
     });
     const gadget = p.inv.slots.find((s) => s && ITEMS[s.id].category === 'gadget');
-    if (incoming) {
-      if (gadget?.id === 'bubble_shield' && r < 0.3) p.actions.push('gadget');
-      else if (r < 0.06 * this.skill) p.actions.push('dash');
-    }
-    if (gadget?.id === 'pocket_spring' && p.hp < 40 && r < 0.01) p.actions.push('gadget');
-    p.inv.consumables.forEach((c, i) => {
-      if (!c) return;
-      const k = this.rng.next();
-      if (c === null) return;
-      if (c.id === 'banana' && d < 220 && k < 0.01) p.actions.push(`c${i}`);
-      if (c.id === 'teleporter' && p.hp < 40 && k < 0.02) p.actions.push(`c${i}`);
-      if (c.id === 'confetti_bomb' && d < 260 && d > 90 && k < 0.02) p.actions.push(`c${i}`);
-      if (c.id === 'decoy' && p.hp < 60 && k < 0.01) p.actions.push(`c${i}`);
-    });
-    if (target && p.hp < 30 && d < 150 && r < 0.03) p.actions.push('dash');
+    if (incoming && gadget?.id === 'bubble_shield' && r < 0.3) p.actions.push('item');
+    else if (gadget?.id === 'pocket_spring' && p.hp < 40 && r < 0.01) p.actions.push('item');
+    else if (!gadget && p.inv.consumables.some(Boolean) && r < 0.006 * this.skill) p.actions.push('item');
   }
 
   // Achat pendant une phase sûre : un objet abordable au hasard, en privilégiant l'équipement permanent.

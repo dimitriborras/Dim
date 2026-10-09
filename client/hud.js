@@ -48,13 +48,11 @@ export class Hud {
     $('#lobby').addEventListener('change', (e) => {
       if (e.target.id === 'rounds') this.send({ t: 'settings', rounds: Number(e.target.value) });
     });
-    $('#slots').addEventListener('click', (e) => {
-      const s = e.target.closest('[data-slot]');
-      if (s) this.onSlotTap?.(Number(s.dataset.slot));
-    });
-    $('#consumables').addEventListener('click', (e) => {
-      const s = e.target.closest('[data-cons]');
-      if (s) this.onConsumableTap?.(Number(s.dataset.cons));
+    $('#itemBtn').addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.onItem?.();
+      e.currentTarget.classList.add('on');
+      setTimeout(() => $('#itemBtn').classList.remove('on'), 140);
     });
   }
 
@@ -144,7 +142,7 @@ export class Hud {
     this.renderScoreboard(snap, m);
     this.renderCenter(snap, m, you);
     this.renderLobby(snap, m);
-    this.renderInventory(you, m);
+    this.renderInventory(you);
     this.renderContract(you);
     this.renderMiniHud(m);
     this.renderFeed();
@@ -243,48 +241,25 @@ export class Hud {
     this.send({ t: a });
   }
 
-  renderInventory(you, m) {
+  // Équipement en lecture seule (le tir est automatique) et bouton d'objet unique.
+  renderInventory(you) {
     if (!you) return;
     const inv = you.inv;
-    const weaponsOnlyPistol = m.phase === 'minigame' && m.mg?.id !== 'crown';
-    const slots = inv.slots.map((s, i) => {
-      if (!s) return `<div class="slot empty" data-slot="${i}"><span class="key">${i + 1}</span><span class="ico">＋</span></div>`;
-      const def = this.items.get(s.id);
-      const pct = s.reloading ? 100 : s.cooldownTotal ? Math.min(100, (s.cooldown / s.cooldownTotal) * 100) : 0;
-      const disabled = weaponsOnlyPistol && s.id !== 'pistol';
-      const ammo = s.reloading ? '⟳' : s.ammo !== null ? `${s.ammo}/${s.maxAmmo}` : '';
-      return `<div class="slot ${i === inv.active ? 'active' : ''} ${disabled ? 'disabled' : ''}" data-slot="${i}" title="${esc(def?.name ?? '')}">
-        <span class="key">${i + 1}</span>${s.level > 1 ? '<span class="lvl">Mk II</span>' : ''}
-        <span class="ico">${def?.icon ?? '?'}</span><span class="ammo">${ammo}</span><i class="cd" style="height:${pct}%"></i></div>`;
-    }).join('');
-    const cons = inv.consumables.map((c, i) => {
-      const def = c ? this.items.get(c) : null;
-      return `<div class="slot small ${c ? '' : 'empty'}" data-cons="${i}" title="${esc(def?.name ?? 'vide')}"><span class="key">${i === 0 ? 'R' : 'F'}</span><span class="ico">${def?.icon ?? '·'}</span></div>`;
-    }).join('');
-    if ($('#slots').innerHTML !== slots) $('#slots').innerHTML = slots;
-    if ($('#consumables').innerHTML !== cons) $('#consumables').innerHTML = cons;
-    $('#dash .cd').style.height = `${Math.min(100, (you.dash / 2.4) * 100)}%`;
+    const gear = inv.slots
+      .filter((x) => x && this.items.get(x.id)?.category === 'weapon')
+      .map((x) => `<span class="${inv.slots[inv.active]?.id === x.id ? 'on' : ''}" title="${esc(this.items.get(x.id)?.name ?? '')}">${this.items.get(x.id)?.icon ?? '?'}${x.level > 1 ? '<sup>II</sup>' : ''}</span>`)
+      .join('');
+    if ($('#gear').innerHTML !== gear) $('#gear').innerHTML = gear;
     $('#wallet').innerHTML = you.inMatch ? `💰 ${you.credits}<br>🏆 ${you.points}` : '💰 —<br>🏆 —';
-    this.renderTouchButtons(you);
-  }
-
-  // Boutons tactiles : n'afficher que ce qui est utilisable, avec l'icône de l'objet et sa recharge.
-  renderTouchButtons(you) {
-    const inv = you.inv;
-    const setBtn = (id, icon, cdPct) => {
-      const b = document.getElementById(id);
-      if (!b) return;
-      b.hidden = !icon;
-      if (!icon) return;
-      const html = `${icon}<i class="ring" style="--cd:${cdPct.toFixed(0)}%"></i>`;
-      if (b.innerHTML !== html) b.innerHTML = html;
-    };
-    inv.consumables.forEach((c, i) => setBtn(`tc${i}`, c ? this.items.get(c)?.icon : null, 0));
-    const gadget = inv.slots.find((s) => s && this.items.get(s.id)?.category === 'gadget');
-    setBtn('tgadget', gadget ? this.items.get(gadget.id)?.icon : null, gadget?.cooldownTotal ? (gadget.cooldown / gadget.cooldownTotal) * 100 : 0);
-    const weapons = inv.slots.filter((s) => s && this.items.get(s.id)?.category === 'weapon').length;
-    setBtn('tweapon', weapons > 1 ? '🔁' : null, 0);
-    setBtn('tdash', '🪀', (you.dash / 2.4) * 100);
+    // Objet utilisable : le gadget s'il en a un, sinon le premier consommable.
+    const gadget = inv.slots.find((x) => x && this.items.get(x.id)?.category === 'gadget');
+    const cons = inv.consumables.filter(Boolean);
+    const icon = gadget ? this.items.get(gadget.id)?.icon : cons.length ? this.items.get(cons[0])?.icon : null;
+    const cd = gadget?.cooldownTotal ? (gadget.cooldown / gadget.cooldownTotal) * 100 : 0;
+    const btn = $('#itemBtn');
+    btn.classList.toggle('empty', !icon);
+    const html = `<span class="ico">${icon ?? '·'}</span>${!gadget && cons.length > 1 ? `<b class="count">${cons.length}</b>` : ''}<i class="ring" style="--cd:${cd.toFixed(0)}%"></i>`;
+    if (btn.innerHTML !== html) btn.innerHTML = html;
   }
 
   announce(html, tone = '') {
@@ -305,11 +280,7 @@ export class Hud {
       el.checked = !!settings[key];
       el.onchange = () => setSetting(key, el.checked);
     };
-    bindCheck('#setAutoFire', 'autoFire');
-    bindCheck('#setAimAssist', 'aimAssist');
     bindCheck('#setHaptics', 'haptics');
-    bindCheck('#setLefty', 'leftHanded');
-    bindCheck('#setTilt', 'tiltShift');
     $('#setShake').value = String(settings.shake);
     $('#setShake').onchange = (e) => setSetting('shake', Number(e.target.value));
     $('#setVolume').value = String(settings.volume);

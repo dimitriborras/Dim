@@ -118,6 +118,32 @@ export const InventorySystem = {
     return false;
   },
 
+  // Tir automatique quand la figurine est posée : l'arme la plus adaptée à la distance.
+  autoFire(player, world, target, d) {
+    if (world.rules.weapons === 'none') return false;
+    const slots = player.inv.slots;
+    const find = (id) => slots.findIndex((s) => s && s.id === id);
+    let idx = 0;
+    if (world.rules.weapons !== 'pistol') {
+      const glove = find('spring_glove');
+      const glue = find('glue_launcher');
+      if (glove > 0 && d < 100) idx = glove;
+      else if (glue > 0 && d > 150 && !(world.time < (target.slowUntil ?? 0)) && slots[glue].ammo > 0 && !slots[glue].reloadUntil) idx = glue;
+    }
+    player.inv.active = idx;
+    return this.useState(player, world, slots[idx]);
+  },
+
+  // Bouton d'objet unique : le gadget s'il est prêt, sinon le premier consommable.
+  useItem(player, world) {
+    const g = player.inv.slots.find((x) => x && ITEMS[x.id].category === 'gadget');
+    if (g && world.time >= g.cooldownUntil && world.rules.items && this.useState(player, world, g)) return true;
+    for (let i = 0; i < player.inv.consumables.length; i++) {
+      if (player.inv.consumables[i] && this.useConsumable(player, world, i)) return true;
+    }
+    return false;
+  },
+
   fire(player, world) {
     const s = player.inv.slots[player.inv.active] ?? player.inv.slots[0];
     return this.useState(player, world, s);

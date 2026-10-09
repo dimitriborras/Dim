@@ -28,13 +28,14 @@ test('molette / gâchettes : arme suivante et précédente', () => {
   assert.deepEqual(parseClientMessage({ t: 'in', act: ['wn', 'wp', 'x'] }).act, ['wn', 'wp']);
 });
 
-test('changer d\'arme reste possible pendant une glissade, pas l\'esquive', () => {
+test('changer d\'arme reste possible pendant une glissade, pas la pichenette', () => {
   const { p, world } = setup();
   p.slipUntil = world.time + 1;
-  p.actions.push('wn', 'dash');
+  p.actions.push('wn');
+  p.pendingFlick = { a: 0, p: 1 };
   world.step(DT);
   assert.equal(p.inv.active, 1);
-  assert.equal(p.flickReadyAt, 0, 'pichenette ignorée pendant la glissade');
+  assert.ok(Math.abs(p.vx) < 1, 'pichenette refusée pendant la glissade');
 });
 
 test('les actions pressées pendant la mort ne partent pas à la réapparition', () => {
@@ -42,7 +43,7 @@ test('les actions pressées pendant la mort ne partent pas à la réapparition',
   InventorySystem.add(p.inv, 'banana');
   p.state = 'dead';
   p.respawnAt = world.time + 0.5;
-  p.actions.push('c0', 'dash');
+  p.actions.push('c0', 'item');
   for (let i = 0; i < 30; i++) world.step(DT);
   assert.equal(p.state, 'alive');
   assert.equal(p.inv.consumables[0]?.id, 'banana', 'banane conservée');
@@ -62,14 +63,27 @@ function duel() {
   return { a, b, world };
 }
 
-test('pichenette : on se lance, puis recharge', () => {
+test('pichenette : trois charges, puis il faut attendre', () => {
   const { a, world } = duel();
-  a.pendingFlick = { a: Math.PI, p: 1 };
+  const speeds = [];
+  for (let i = 0; i < 4; i++) {
+    a.vx = a.vy = 0;
+    a.pendingFlick = { a: Math.PI, p: 1 };
+    world.step(DT);
+    speeds.push(Math.hypot(a.vx, a.vy));
+  }
+  assert.ok(speeds.slice(0, 3).every((v) => v > 800), 'trois pichenettes à pleine puissance');
+  assert.ok(speeds[3] < 100, 'la quatrième est refusée faute de charge');
+  for (let i = 0; i < 30; i++) world.step(DT);
+  assert.ok(a.energy >= 1, 'une charge revient en moins d\'une seconde');
+});
+
+test('petite tape : petit bond qui coûte peu', () => {
+  const { a, world } = duel();
+  a.pendingFlick = { a: 0, p: 0, hop: true };
   world.step(DT);
-  assert.ok(Math.hypot(a.vx, a.vy) > 900, 'lancé à pleine puissance');
-  a.pendingFlick = { a: 0, p: 1 };
-  world.step(DT);
-  assert.ok(a.vx < 0, 'deuxième pichenette refusée pendant la recharge');
+  assert.ok(a.vx > 150 && a.vx < 260);
+  assert.ok(a.energy > 2.5);
 });
 
 test('pichenette sur un joueur : l\'élan passe à la cible (berceau de Newton)', () => {
@@ -83,16 +97,25 @@ test('pichenette sur un joueur : l\'élan passe à la cible (berceau de Newton)'
   assert.ok(hit, 'collision détectée');
   assert.ok(b.vx > 600, `la cible est projetée (vx=${b.vx.toFixed(0)})`);
   assert.ok(Math.abs(a.vx) < b.vx / 3, 'le lanceur s\'arrête presque');
-  assert.ok(b.toppleUntil > world.time, 'la cible est renversée');
   assert.equal(b.lastHitBy, 'a', 'une chute serait créditée au lanceur');
 });
 
-test('figurine renversée : pas de contrôle, puis elle se relève', () => {
+test('figurine renversée : pichenette impossible, puis elle se relève', () => {
   const { a, world } = duel();
   world.topple(a);
-  a.input = { mx: 1, my: 0, aim: 0, fire: false };
+  a.pendingFlick = { a: 0, p: 1 };
   world.step(DT);
-  assert.ok(Math.abs(a.vx) < 5, 'aucune accélération pendant le renversement');
+  assert.ok(Math.abs(a.vx) < 5, 'pas de pichenette pendant le renversement');
   for (let i = 0; i < 30; i++) world.step(DT);
-  assert.ok(a.vx > 100, 'contrôle retrouvé');
+  a.pendingFlick = { a: Math.PI, p: 1 };
+  world.step(DT);
+  assert.ok(a.vx < -800, 'pichenette possible une fois relevée');
+});
+
+test('posée, la figurine tire seule sur l\'adversaire le plus proche', () => {
+  const { a, b, world } = duel();
+  world.step(DT);
+  assert.ok(world.projectiles.some((pr) => pr.owner === 'a'), 'tir automatique');
+  assert.ok(Math.abs(a.aim) < 0.2, 'visée vers la cible');
+  void b;
 });
