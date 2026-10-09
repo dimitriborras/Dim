@@ -3,6 +3,22 @@
 Party game multijoueur 2D (2 à 8 joueurs, 4 à 8 recommandés) : des figurines en plastique enchaînent
 mini-jeux, achats de gadgets et combats dans une arène commune, puis s'affrontent en finale.
 
+## Mettre le jeu en ligne (jouer depuis un téléphone)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/dimitriborras/Dim)
+
+1. Toucher le bouton ci-dessus (ça marche depuis un téléphone) et se connecter à Render avec GitHub.
+2. Valider le service `plastic-panic` (offre gratuite, configuré par `render.yaml`).
+3. Après 2 à 3 minutes, Render donne une adresse `https://plastic-panic-xxxx.onrender.com` :
+   l'ouvrir, créer une salle et partager le lien.
+
+Chaque push sur la branche par défaut redéploie le jeu. L'offre gratuite met le serveur en veille après
+15 minutes sans joueur : la première visite suivante prend environ une minute, et les parties en cours
+sont perdues lors de la mise en veille.
+
+Vercel ou Netlify ne conviennent pas : leurs fonctions serverless ne gardent pas de connexion WebSocket
+ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par seconde par salle).
+
 ## Jouer dans son navigateur
 
 1. **Installer Node.js** (version 20 ou plus) depuis https://nodejs.org (bouton « LTS »).
