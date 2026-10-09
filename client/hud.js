@@ -98,7 +98,8 @@ export class Hud {
         break;
       case 'bought': this.pushFeed(`${this.name(ev.id)} achète ${it(ev.item)?.icon ?? ''} ${esc(it(ev.item)?.name ?? '')}`); break;
       case 'points':
-        if (ev.id === youId && ev.reason !== 'Mini-jeu' && ev.reason !== 'Finale') this.pushFeed(`🏆 +${ev.amount} pts — ${esc(ev.reason)}`);
+        if (ev.id === youId && ev.reason === 'Carton') this.announce('💥 CARTON !<small>+1 point</small>', 'good');
+        else if (ev.id === youId && ev.reason !== 'Mini-jeu' && ev.reason !== 'Finale') this.pushFeed(`🏆 +${ev.amount} pts — ${esc(ev.reason)}`);
         break;
       case 'credits':
         if (ev.id === youId && (ev.reason === 'Contrat rempli' || ev.reason === 'Prime du champion')) {
@@ -107,7 +108,9 @@ export class Hud {
         }
         break;
       case 'lobbyPoint':
-        if (ev.id === youId) this.announce(`🎱 ${plain(ev.victim)} empoché !<small>+1 au billard</small>`, 'good');
+        if (ev.reason === 'slam') {
+          if (ev.id === youId) this.announce(`💥 CARTON !<small>+1</small>`, 'good');
+        } else if (ev.id === youId) this.announce(`🎱 ${plain(ev.victim)} empoché !<small>+3</small>`, 'good');
         else if (ev.victim === youId) this.announce(`🎱 Empoché par ${plain(ev.id)}`, 'bad');
         break;
       case 'champion':
@@ -232,7 +235,7 @@ export class Hud {
         ${solo ? '<p class="hint">La simulation tourne dans votre navigateur avec des bots.</p>' : `<div>Code : <span class="code">${esc(snap.code)}</span></div>
         <div class="row"><input readonly value="${esc(link)}" style="flex:1;min-width:0"><button class="btn small" data-a="copy">Copier le lien</button></div>`}
         <div class="players">${players}</div>
-        <p class="hint">🎱 Billard libre en attendant : pousse les autres dans les poches (+1 chacun). ${snap.roster.length}/8 joueurs — 4 à 8 recommandés.</p>
+        <p class="hint">🎱 Billard libre en attendant : +3 par adversaire empoché, +1 par gros choc. Les boules roulent : sers-t'en ! ${snap.roster.length}/8 joueurs — 4 à 8 recommandés.</p>
       </div>
       ${hostCtl}`;
     el.dataset.link = link;

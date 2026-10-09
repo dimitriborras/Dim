@@ -39,12 +39,12 @@ export const ARENA = {
     { x: 400, y: 477, w: 46, h: 46, style: 'chalk' },
     { x: 1154, y: 477, w: 46, h: 46, style: 'chalk' },
   ],
-  // Boules de billard fixes : elles renvoient comme des bumpers.
-  bumpers: [
-    { x: 800, y: 330, r: 26, ball: 8 },
-    { x: 800, y: 670, r: 26, ball: 3 },
-    { x: 560, y: 300, r: 24, ball: 1 },
-    { x: 1040, y: 700, r: 24, ball: 5 },
+  bumpers: [],
+  // Boules de billard mobiles, rangées en triangle au fond de la table (carambolages !).
+  balls: [
+    { x: 1040, y: 500, num: 1 },
+    { x: 1076, y: 479, num: 2 }, { x: 1076, y: 521, num: 3 },
+    { x: 1112, y: 458, num: 4 }, { x: 1112, y: 500, num: 8 }, { x: 1112, y: 542, num: 5 },
   ],
   springs: [],
   hazardEdges: false,

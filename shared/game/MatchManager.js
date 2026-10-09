@@ -92,12 +92,20 @@ export class MatchManager {
     }
     this.minigame = null;
     this.round = 0;
+    // Billard libre : +3 par adversaire empoché, +1 par gros choc (« Carton ! »).
+    const lobbyPoints = (p, n, reason, victim) => {
+      p.lobbyScore = (p.lobbyScore ?? 0) + n;
+      this.emit('lobbyPoint', { id: p.id, victim: victim.id, score: p.lobbyScore, n, reason });
+    };
     this.createWorld({ map: ARENA, rules: PRACTICE_RULES, hooks: {
       onEliminated: (victim, killerId) => {
         const killer = killerId ? this.room.players.get(killerId) : null;
-        if (!killer) return;
-        killer.lobbyScore = (killer.lobbyScore ?? 0) + 1;
-        this.emit('lobbyPoint', { id: killer.id, victim: victim.id, score: killer.lobbyScore });
+        if (killer) lobbyPoints(killer, 3, 'pocket', victim);
+      },
+      onSlam: (attacker, victim) => {
+        if (this.world.time < (attacker.slamReadyAt ?? 0)) return;
+        attacker.slamReadyAt = this.world.time + 1.2;
+        lobbyPoints(attacker, 1, 'slam', victim);
       },
     } });
     this.phase = 'lobby';
@@ -183,6 +191,15 @@ export class MatchManager {
           ScoreSystem.progressContract(killer, 'eliminate', 1, this.events, this.score);
         }
       },
+      // Gros choc en combat : +1 point, au plus toutes les 2 s et 5 fois par combat.
+      onSlam: (attacker, victim) => {
+        if (this.phase !== 'combat' || !attacker.inMatch) return;
+        if (this.world.time < (attacker.slamReadyAt ?? 0) || (attacker.slamsThisCombat ?? 0) >= 5) return;
+        attacker.slamReadyAt = this.world.time + 2;
+        attacker.slamsThisCombat = (attacker.slamsThisCombat ?? 0) + 1;
+        this.score.addPoints(attacker, 1, 'Carton', this.events);
+        void victim;
+      },
       onDamage: (attacker, victim, dmg) => {
         if (this.phase !== 'combat') return;
         attacker.stats.damage += dmg;
@@ -213,6 +230,7 @@ export class MatchManager {
     const contracts = this.score.assignContracts(this.participants(), this.rng);
     this.participants().forEach((p, i) => {
       p.diedThisCombat = false;
+      p.slamsThisCombat = 0;
       p.contract = contracts.get(p.id) ?? null;
       p.championShield = p.id === this.score.championId;
       InventorySystem.refresh(p.inv);

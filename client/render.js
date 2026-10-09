@@ -493,7 +493,7 @@ export class Renderer {
     g.translate(c.width / 2, c.height / 2);
     g.scale(k, k);
     if (ball !== null) {
-      const col = { 1: '#f7c51e', 3: '#d8262b', 5: '#f2721c', 8: '#151515' }[ball] ?? '#2f62d9';
+      const col = { 1: '#f7c51e', 2: '#2f62d9', 3: '#d8262b', 4: '#7b2fbf', 5: '#f2721c', 8: '#151515' }[ball] ?? '#2f62d9';
       const gr = g.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
       gr.addColorStop(0, shade(col.length === 7 ? col : '#151515', 0.5));
       gr.addColorStop(0.5, col);
@@ -643,6 +643,14 @@ export class Renderer {
         break;
       case 'thud': push({ kind: 'clack', x: ev.x, y: ev.y, life: 0.2, power: 120 }); break;
       case 'topple': push({ kind: 'text', x: ev.x, y: ev.y, text: 'BONK', color: '#ffe066', life: 0.6, size: 15 }); break;
+      case 'slam':
+        push({ kind: 'text', x: ev.x, y: ev.y, text: 'CARTON !', color: '#ff6fb5', life: 0.7, size: 20 });
+        this.shake = Math.max(this.shake, ev.id === youId || ev.victim === youId ? 7 : 3);
+        if (ev.id === youId) this.hitStopUntil = now + 0.05;
+        break;
+      case 'ballPocket':
+        push({ kind: 'ring', x: ev.x, y: ev.y, r: 50, life: 0.35, color: '#ffffff' });
+        break;
       case 'pocket':
         push({ kind: 'ring', x: ev.x, y: ev.y, r: 60, life: 0.4, color: '#ffffff' });
         push({ kind: 'text', x: ev.x, y: ev.y, text: '🎱 Empoché !', color: '#ffffff', life: 1, size: 18 });
@@ -790,6 +798,7 @@ export class Renderer {
     for (const d of state.decoys) { ctx.moveTo(d.x + PLAYER.radius, d.y); ctx.arc(d.x, d.y, PLAYER.radius, 0, 7); }
     for (const pr of state.proj) { ctx.moveTo(pr.x + pr.r, pr.y); ctx.arc(pr.x, pr.y, pr.r, 0, 7); }
     for (const pk of state.pickups) { const r = pk.kind === 'crown' ? 20 : 11; ctx.moveTo(pk.x + r, pk.y); ctx.arc(pk.x, pk.y, r, 0, 7); }
+    for (const b of state.balls ?? []) { ctx.moveTo(b.x + 21, b.y + 4); ctx.arc(b.x, b.y + 4, 21, 0, 7); }
     ctx.fill();
     if (state.microTarget) {
       // Cible du micro-jeu « Dans le cercle ! ».
@@ -892,6 +901,7 @@ export class Renderer {
     for (const p of state.players) if (p.s !== 'dead') items.push({ key: depth(p) + (p.s === 'falling' ? 2000 : 0), kind: 5, p });
     for (const b of state.bombs) items.push({ key: depth(b), kind: 6, b });
     for (const pr of state.proj) items.push({ key: depth(pr), kind: 7, pr });
+    for (const b of state.balls ?? []) items.push({ key: depth(b), kind: 8, b });
     items.sort((a, b) => a.key - b.key);
     const s = this.cam.scale;
     for (const it of items) {
@@ -929,6 +939,19 @@ export class Renderer {
         }
         case 6: this.drawBomb(it.b, now, s); break;
         case 7: this.drawProjectile(it.pr, s); break;
+        case 8: {
+          // Boule qui roule : le numéro tourne avec le déplacement.
+          const sp = this.bumperSprite(19, it.b.num);
+          const c = this.toScreen(it.b.x, it.b.y, 17);
+          const w = sp.width / this.pr;
+          const roll = ((it.b.x + it.b.y) / 19) % (Math.PI * 2);
+          this.ctx.save();
+          this.ctx.translate(c.x, c.y);
+          this.ctx.rotate(roll);
+          this.ctx.drawImage(sp, -w / 2, -w / 2, w, w);
+          this.ctx.restore();
+          break;
+        }
         default: break;
       }
     }

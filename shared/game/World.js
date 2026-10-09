@@ -1,4 +1,4 @@
-import { PLAYER, SHOP } from '../constants.js';
+import { PLAYER, SHOP, BALL } from '../constants.js';
 import {
   pointInRect, resolveCircleRect, circleRectOverlap, segmentRectT, segmentCircleT, angleDiff, dist,
 } from '../geometry.js';
@@ -39,6 +39,10 @@ export class World {
     this.bombs = [];
     this.decoys = [];
     this.pickups = []; // gérés par les mini-jeux (pièces, couronne...)
+    this.balls = (map.balls ?? []).map((b) => ({
+      id: this.nextId++, num: b.num, r: b.r ?? 19, x: b.x, y: b.y, home: { x: b.x, y: b.y },
+      vx: 0, vy: 0, lastHitBy: null, lastHitAt: -99, active: true, backAt: 0,
+    }));
     this.effects = [];
     this.events = [];
     this.movers = map.movingPlatforms.map((mp) => movingPlatformRect(mp, time));
@@ -209,6 +213,7 @@ export class World {
 
     for (const p of this.players) this.stepPlayer(p, dt, prevMovers);
     this.collidePlayers();
+    this.stepBalls(dt);
     for (const p of this.players) this.postPlayer(p);
     this.stepProjectiles(dt);
     this.stepTraps();
@@ -313,6 +318,7 @@ export class World {
     p.vy = Math.sin(angle) * v;
     p.flingUntil = t + flingDuration(pw);
     p.energy -= PLAYER.flickCost;
+    p.lastFlickAt = t;
     p.aim = angle;
     this.emit('flick', { id: p.id, power: Math.round(pw * 100) / 100 });
     return true;
@@ -325,6 +331,7 @@ export class World {
     p.vx = Math.cos(angle) * v;
     p.vy = Math.sin(angle) * v;
     p.energy -= PLAYER.hopCost;
+    p.lastFlickAt = this.time;
     this.emit('hop', { id: p.id });
     return true;
   }
@@ -370,6 +377,102 @@ export class World {
     }
   }
 
+  // Boules de billard : elles roulent, rebondissent sur les bandes, se percutent entre elles
+  // et percutent les figurines. Une boule garde en mémoire qui l'a lancée : si elle envoie
+  // quelqu'un dans une poche, l'élimination revient à ce joueur (carambolage).
+  stepBalls(dt) {
+    const t = this.time;
+    for (const b of this.balls) {
+      if (!b.active) {
+        const free = this.players.every((p) => p.state !== 'alive' || Math.hypot(p.x - b.home.x, p.y - b.home.y) > 50)
+          && this.balls.every((o) => o === b || !o.active || Math.hypot(o.x - b.home.x, o.y - b.home.y) > o.r + b.r + 2);
+        if (t >= b.backAt && free) {
+          Object.assign(b, { active: true, x: b.home.x, y: b.home.y, vx: 0, vy: 0, lastHitBy: null });
+          this.emit('ballBack', { num: b.num });
+        }
+        continue;
+      }
+      const k = Math.exp(-BALL.friction * dt);
+      b.vx *= k;
+      b.vy *= k;
+      if (Math.hypot(b.vx, b.vy) < PLAYER.stopSpeed) { b.vx = 0; b.vy = 0; }
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      const fast = Math.hypot(b.vx, b.vy);
+      if (collideWalls(b, this.map.walls, b.r, 0.8) && fast > 250) this.emit('thud', { x: Math.round(b.x), y: Math.round(b.y) });
+      const pk = pocketAt(this.map, b.x, b.y);
+      if (pk) {
+        b.active = false;
+        b.backAt = t + BALL.respawn;
+        this.emit('ballPocket', { x: pk.x, y: pk.y, num: b.num, by: t - b.lastHitAt < PLAYER.killCreditWindow ? b.lastHitBy : null });
+      }
+    }
+    const balls = this.balls.filter((b) => b.active);
+    // Boule contre boule.
+    for (let i = 0; i < balls.length; i++) {
+      for (let j = i + 1; j < balls.length; j++) {
+        const a = balls[i];
+        const b = balls[j];
+        const hit = this.bounce(a, b, a.r + b.r, 1, 1, BALL.restitution);
+        if (hit > 0) {
+          // La boule percutée hérite de l'auteur du coup.
+          const [src, dst] = Math.hypot(a.vx, a.vy) < Math.hypot(b.vx, b.vy) ? [a, b] : [b, a];
+          if (src.lastHitBy && t - src.lastHitAt < PLAYER.killCreditWindow) { dst.lastHitBy = src.lastHitBy; dst.lastHitAt = t; }
+          if (hit > 120) this.emit('clack', { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2), power: Math.round(hit) });
+        }
+      }
+    }
+    // Boule contre figurine.
+    for (const p of this.players) {
+      if (p.state !== 'alive' || t < p.airborneUntil) continue;
+      for (const b of balls) {
+        const vp = Math.hypot(p.vx, p.vy);
+        const vb = Math.hypot(b.vx, b.vy);
+        const shield = t < p.bubbleUntil;
+        const hit = this.bounce(p, b, PLAYER.radius + b.r, shield ? 1e6 : 1, BALL.mass, BALL.playerRestitution);
+        if (hit <= 0) continue;
+        if (vp >= vb) {
+          const who = this.creditOf(p); // la figurine (ou celui qui l'a lancée) a tapé la boule
+          if (who) { b.lastHitBy = who; b.lastHitAt = t; }
+        } else if (b.lastHitBy && b.lastHitBy !== p.id && t - b.lastHitAt < PLAYER.killCreditWindow) {
+          p.lastHitBy = b.lastHitBy; // carambolage : la boule pousse pour son lanceur
+          p.lastHitAt = t;
+        }
+        if (hit > 120) this.emit('clack', { x: Math.round((p.x + b.x) / 2), y: Math.round((p.y + b.y) / 2), power: Math.round(hit) });
+        if (Math.hypot(p.vx, p.vy) > PLAYER.toppleSpeed) this.topple(p);
+      }
+    }
+  }
+
+  // Qui est responsable du mouvement de cette figurine ? Elle-même si elle vient de se lancer,
+  // sinon celui qui l'a frappée récemment (les carambolages remontent ainsi jusqu'à l'auteur).
+  creditOf(p) {
+    const t = this.time;
+    if (t - (p.lastFlickAt ?? -99) < 1.5) return p.id;
+    if (p.lastHitBy && t - p.lastHitAt < PLAYER.killCreditWindow) return p.lastHitBy;
+    return null;
+  }
+
+  // Choc élastique entre deux disques de masses ma et mb. Retourne l'impulsion (0 si pas de choc).
+  bounce(a, b, minD, ma, mb, e) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const d = Math.hypot(dx, dy);
+    if (d >= minD || d < 0.001) return 0;
+    const nx = dx / d;
+    const ny = dy / d;
+    const inv = 1 / ma + 1 / mb;
+    const push = minD - d;
+    a.x -= nx * push * (1 / ma) / inv; a.y -= ny * push * (1 / ma) / inv;
+    b.x += nx * push * (1 / mb) / inv; b.y += ny * push * (1 / mb) / inv;
+    const vn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+    if (vn <= 0) return 0;
+    const j = ((1 + e) * vn) / inv;
+    a.vx -= (j / ma) * nx; a.vy -= (j / ma) * ny;
+    b.vx += (j / mb) * nx; b.vy += (j / mb) * ny;
+    return j;
+  }
+
   // Chocs entre figurines : séparation, puis échange d'élan comme deux billes de plastique.
   // Une figurine lancée par pichenette transmet presque toute sa vitesse (effet berceau de Newton).
   collidePlayers() {
@@ -405,8 +508,8 @@ export class World {
             // Après l'échange d'élan, c'est la victime qui file : l'autre était l'attaquant.
             const victim = Math.hypot(a.vx, a.vy) > Math.hypot(b.vx, b.vy) ? a : b;
             const attacker = victim === a ? b : a;
-            victim.lastHitBy = attacker.id;
-            victim.lastHitAt = t;
+            const who = this.creditOf(attacker);
+            if (who && who !== victim.id) { victim.lastHitBy = who; victim.lastHitAt = t; }
           }
           continue;
         }
@@ -428,6 +531,10 @@ export class World {
         } else {
           a.vx -= sx * impulse; a.vy -= sy * impulse;
           CombatSystem.hit(this, a, b, { damage, knockback: impulse, dirx: sx, diry: sy, cause: 'flick' });
+          if (impulse >= PLAYER.slamImpulse && !absorbed) {
+            this.emit('slam', { id: a.id, victim: b.id, x: Math.round(b.x), y: Math.round(b.y) });
+            this.hooks.onSlam?.(a, b, impulse);
+          }
         }
         a.flingUntil = Math.min(a.flingUntil, t + 0.05);
       }
@@ -472,6 +579,25 @@ export class World {
         if (d.owner === pr.owner || d.dead) continue;
         const tt = segmentCircleT(pr.x, pr.y, x1, y1, d.x, d.y, PLAYER.radius + pr.radius);
         if (tt !== null && tt < bestT) { bestT = tt; target = d; }
+      }
+      let ballHit = null;
+      for (const b of this.balls) {
+        if (!b.active) continue;
+        const tt = segmentCircleT(pr.x, pr.y, x1, y1, b.x, b.y, b.r + pr.radius);
+        if (tt !== null && tt < bestT) { bestT = tt; target = null; ballHit = b; }
+      }
+      if (ballHit) {
+        // Tirer dans une boule la pousse : de quoi faire des carambolages à distance.
+        pr.x += (x1 - pr.x) * bestT;
+        pr.y += (y1 - pr.y) * bestT;
+        pr.dead = true;
+        const sp = Math.hypot(pr.vx, pr.vy) || 1;
+        ballHit.vx += (pr.vx / sp) * pr.knockback * 2.2;
+        ballHit.vy += (pr.vy / sp) * pr.knockback * 2.2;
+        ballHit.lastHitBy = pr.owner;
+        ballHit.lastHitAt = this.time;
+        this.emit('impact', { x: pr.x, y: pr.y, kind: pr.kind });
+        continue;
       }
       pr.x += (x1 - pr.x) * bestT;
       pr.y += (y1 - pr.y) * bestT;
@@ -587,6 +713,7 @@ export class World {
       proj: this.projectiles.map((p) => [p.id, r(p.x), r(p.y), p.kind, p.radius]),
       traps: this.traps.map((tr) => [tr.id, r(tr.x), r(tr.y), t >= tr.armAt ? 1 : 0]),
       bombs: this.bombs.map((b) => [b.id, r(b.x), r(b.y), Math.max(0, Math.round((b.explodeAt - t) * 10) / 10)]),
+      balls: this.balls.filter((b) => b.active).map((b) => [b.id, r(b.x), r(b.y), b.num]),
       decoys: this.decoys.map((d) => [d.id, d.owner, r(d.x), r(d.y), Math.round(Math.atan2(d.vy, d.vx) * 100) / 100]),
       pickups: this.pickups.map((pk) => [pk.id, pk.kind, r(pk.x), r(pk.y)]),
     };

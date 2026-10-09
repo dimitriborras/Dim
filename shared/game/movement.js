@@ -42,15 +42,15 @@ export function glide(p, dt, map, st = {}) {
 }
 
 // Rebond sur les briques (comme une bande de billard). Retourne true en cas de choc.
-export function collideWalls(p, walls) {
+export function collideWalls(p, walls, radius = PLAYER.radius, restitution = PLAYER.wallRestitution) {
   let hit = false;
   for (const w of walls) {
-    const n = resolveCircleRect(p, PLAYER.radius, w);
+    const n = resolveCircleRect(p, radius, w);
     if (!n) continue;
     const vn = p.vx * n.nx + p.vy * n.ny;
     if (vn < 0) {
-      p.vx -= (1 + PLAYER.wallRestitution) * vn * n.nx;
-      p.vy -= (1 + PLAYER.wallRestitution) * vn * n.ny;
+      p.vx -= (1 + restitution) * vn * n.nx;
+      p.vy -= (1 + restitution) * vn * n.ny;
       hit = true;
     }
   }

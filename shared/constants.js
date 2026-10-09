@@ -32,6 +32,7 @@ export const PLAYER = {
   toppleSpeed: 720,
   toppleTime: 0.6,
   autoFireRange: 620,
+  slamImpulse: 450, // choc assez violent pour rapporter un « Carton ! »
   respawnDelay: 3,
   spawnInvuln: 1,
   fallTime: 0.45,
@@ -50,6 +51,15 @@ export const PHASES = {
   combat: 35,
   lastShop: 7,
   finalResults: 15,
+};
+
+// Boules de billard mobiles.
+export const BALL = {
+  friction: 1.25, // elles roulent plus loin que les figurines
+  restitution: 0.94, // boule contre boule : presque parfaitement élastique
+  playerRestitution: 0.85,
+  mass: 0.8, // un peu plus légères qu'une figurine
+  respawn: 4, // secondes avant qu'une boule empochée revienne sur sa mouche
 };
 
 export const SHOP = {

@@ -75,6 +75,8 @@ export class Sfx {
       case 'microLose': this.tone({ f: 220, f2: 110, d: 0.3, type: 'sawtooth', v: 0.06 }); break;
       case 'hop': if (mine) this.tone({ f: 520, f2: 760, d: 0.06, type: 'triangle', v: 0.04 }); break;
       case 'thud': this.tone({ f: 260, f2: 120, d: 0.06, type: 'square', v: 0.05 }); break;
+      case 'slam': this.tone({ f: 140, f2: 70, d: 0.14, type: 'square', v: 0.09 }); break;
+      case 'ballPocket': this.tone({ f: 380, f2: 110, d: 0.18, type: 'sine', v: 0.08 }); break;
       case 'pocket':
         this.tone({ f: 420, f2: 90, d: 0.22, type: 'sine', v: 0.1 }); // « plop » au fond de la poche
         this.tone({ f: 1600, f2: 1200, d: 0.03, type: 'square', v: 0.04 });

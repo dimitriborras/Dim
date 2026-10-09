@@ -221,6 +221,11 @@ function interpolate() {
     const q = decA.get(id);
     return q ? { owner, x: lerp(q[2], x, k), y: lerp(q[3], y, k), a: ang } : { owner, x, y, a: ang };
   });
+  const ballA = tupleMap(A.balls ?? []);
+  const balls = (B.balls ?? []).map(([id, x, y, num]) => {
+    const q = ballA.get(id);
+    return q ? { id, num, x: lerp(q[1], x, k), y: lerp(q[2], y, k) } : { id, num, x, y };
+  });
   const movers = B.movers.map((m, i) => (A.movers[i] ? [lerp(A.movers[i][0], m[0], k), lerp(A.movers[i][1], m[1], k)] : m));
   return {
     map: B.map,
@@ -229,6 +234,7 @@ function interpolate() {
     proj,
     bombs,
     decoys,
+    balls,
     movers,
     traps: B.traps.map(([id, x, y, armed]) => ({ id, x, y, armed })),
     pickups: B.pickups.map(([id, kind, x, y]) => ({ id, kind, x, y })),

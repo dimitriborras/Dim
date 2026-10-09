@@ -50,7 +50,7 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   `cloudflared tunnel --url http://localhost:8080`, puis partager l'adresse `https://…` obtenue
   (les WebSocket passent automatiquement en `wss`).
 - **Port déjà utilisé** : `PORT=3000 npm start` (Windows PowerShell : `$env:PORT=3000; npm start`).
-- `npm test` lance les 29 tests (économie, anti-triche, phases, réseau).
+- `npm test` lance les 33 tests (économie, anti-triche, phases, réseau).
 
 - **Créer une salle** : un code à 4 lettres et un lien à partager s'affichent (aucun compte nécessaire).
 - **Rejoindre** : code ou lien `?room=CODE`. En cas de coupure, le client se reconnecte seul
@@ -76,9 +76,13 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   suit est créditée à l'attaquant. Seul un très gros choc renverse une figurine (0,6 s sans contrôle).
 - **Réactivité** : la physique de sa propre figurine (pichenette, rebonds) est calculée immédiatement sur
   l'appareil puis recalée sur le serveur, même avec du ping (`client/predict.js`, `shared/game/movement.js`).
-- **Le billard** (lobby, combat, finale) : tapis vert, bandes qui renvoient, six poches. Plus de vide sur
+- **Le billard** (lobby, combat, finale) : tapis vert, bandes qui renvoient, six poches, et un triangle de
+  boules **mobiles** : on les percute, elles se percutent et percutent les figurines (carambolages). Tirer dans
+  une boule la pousse aussi. Le crédit d'une chute remonte la chaîne jusqu'à l'auteur du coup, et une boule
+  empochée revient sur sa mouche après 4 s. **Gros choc** (« Carton ! ») : +1 au lobby, +1 point en combat
+  (au plus toutes les 2 s et 5 fois par combat). Plus de vide sur
   les bords : on ne tombe que dans les poches. Pousser un adversaire dans une poche compte comme une
-  élimination ; au lobby (billard libre, sans tir), chaque adversaire empoché rapporte 🎱 +1. Les bots visent
+  élimination ; au lobby (billard libre, sans tir), chaque adversaire empoché rapporte 🎱 +3 et chaque gros choc +1. Les bots visent
   comme au billard (bille fantôme derrière la cible, angle de coupe, puissance dosée).
 - **Diorama** : vu de trois quarts, la nuit ; en vertical, la vue pivote d'un quart de tour pour que la table
   s'affiche dans sa longueur (seul l'affichage pivote, la simulation est la même pour tous).
