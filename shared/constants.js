@@ -47,9 +47,9 @@ export const HAZARD = {
 
 export const PHASES = {
   intro: 4,
-  rewards: 8, // résultats + boutique sûre
-  combat: 35,
-  lastShop: 7,
+  rewards: 14, // résultats + Distributeur
+  combat: 40, // la Mêlée sur le billard
+  lastShop: 4, // bilan de la Mêlée
   finalResults: 15,
 };
 
@@ -62,10 +62,6 @@ export const BALL = {
   respawn: 4, // secondes avant qu'une boule empochée revienne sur sa mouche
 };
 
-export const SHOP = {
-  combatTransactionTime: 1.5,
-  combatMoveFactor: 0.45,
-};
 
 export const REWARDS = {
   minigame: [
@@ -80,19 +76,20 @@ export const REWARDS = {
     { credits: 0, points: 10 },
   ],
   finaleParticipation: { credits: 0, points: 5 },
-  // Points pour la 1re, 2e, 3e... élimination de la même victime pendant un combat.
+  // Mêlée : points pour le 1er, 2e, 3e… empochage de la même victime.
   killPoints: [3, 1, 0],
   killCredits: 10,
   championKillPoints: 2,
   championKillCredits: 30,
-  survivePoints: 1,
+  survivePoints: 2, // jamais empoché de toute la Mêlée
+  ballPoints: 1, // boule numérotée empochée (au plus 3 par Mêlée)
+  maxBallPoints: 3,
 };
 
 export const CONTRACT = {
   rewardCredits: 40,
   surviveRewardCredits: 30,
-  damageTarget: 60,
-  bountyHits: 2,
+  slamTarget: 2,
 };
 
 export const ROUND_OPTIONS = [3, 5, 8];

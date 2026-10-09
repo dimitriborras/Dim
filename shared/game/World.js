@@ -1,6 +1,6 @@
-import { PLAYER, SHOP, BALL } from '../constants.js';
+import { PLAYER, BALL } from '../constants.js';
 import {
-  pointInRect, resolveCircleRect, circleRectOverlap, segmentRectT, segmentCircleT, angleDiff, dist,
+  pointInRect, resolveCircleRect, circleRectOverlap, segmentRectT, dist,
 } from '../geometry.js';
 import { movingPlatformRect, isGroundAt, pocketAt } from '../maps.js';
 import { CombatSystem } from './CombatSystem.js';
@@ -10,8 +10,8 @@ import { inHazard, glide, collideWalls, collideBumpers, flickSpeed, flingDuratio
 const DEFAULT_RULES = {
   damage: true,
   knockbackScale: 1,
-  items: true,
-  weapons: 'all', // 'all' | 'pistol' | 'none'
+  items: true, // gadgets utilisables
+  regen: 1, // multiplicateur de recharge des pichenettes (0 : coups comptés)
   respawn: true,
   respawnDelay: PLAYER.respawnDelay,
   respawnInvuln: PLAYER.spawnInvuln,
@@ -20,11 +20,8 @@ const DEFAULT_RULES = {
 
 const MAX_TRAPS = 8;
 
-// Vrai si l'action « sN » vise une arme (un gadget dans cet emplacement serait déclenché, pas sélectionné).
-const ITEMS_WEAPON_SWITCH = (p, a) => p.inv.slots[Number(a[1])]?.id && InventorySystem.isWeaponSlot(p.inv, Number(a[1]));
-
-// Simulation physique d'une phase : déplacement (PlayerController côté serveur),
-// projectiles, pièges, éléments d'arène. Les règles de score sont injectées via `hooks`.
+// Simulation physique d'une phase : palets, boules, pièges et gadgets, éléments d'arène.
+// Les règles de score sont injectées via `hooks`.
 export class World {
   constructor({ map, players, rules = {}, rng, hooks = {}, time = 0 }) {
     this.map = map;
@@ -34,7 +31,6 @@ export class World {
     this.hooks = hooks;
     this.time = time;
     this.nextId = 1;
-    this.projectiles = [];
     this.traps = [];
     this.bombs = [];
     this.decoys = [];
@@ -86,50 +82,46 @@ export class World {
     return { dx, dy, x: player.x + dx * (PLAYER.radius + extra), y: player.y + dy * (PLAYER.radius + extra) };
   }
 
-  spawnProjectile(owner, spec) {
-    const m = this.muzzle(owner);
-    if (this.rayWalls(owner.x, owner.y, m.x, m.y) < 1) {
-      this.emit('fizzle', { x: m.x, y: m.y });
-      return;
+  // Pétard : onde de choc autour du lanceur.
+  shockwave(owner, R, power) {
+    this.emit('boom', { x: owner.x, y: owner.y, r: R, small: true });
+    for (const p of this.players) {
+      if (p === owner || p.state !== 'alive' || this.time < p.airborneUntil) continue;
+      const d = dist(owner, p);
+      if (d > R + PLAYER.radius || !this.lineOfSight(owner, p)) continue;
+      const f = 1 - Math.min(1, d / (R + PLAYER.radius)) * 0.55;
+      const dx = d > 0.01 ? (p.x - owner.x) / d : 1;
+      const dy = d > 0.01 ? (p.y - owner.y) / d : 0;
+      CombatSystem.hit(this, owner, p, { knockback: (power * f) / (p.mass ?? 1), dirx: dx, diry: dy, cause: 'blast' });
     }
-    // Assistance tactile légère : projectile un peu plus large, jamais de visée automatique.
-    const radius = spec.radius + (owner.touch ? 4 : 0);
-    this.projectiles.push({
-      id: this.nextId++,
-      owner: owner.id,
-      kind: spec.kind,
-      x: m.x,
-      y: m.y,
-      vx: m.dx * spec.speed,
-      vy: m.dy * spec.speed,
-      radius,
-      damage: spec.damage,
-      knockback: spec.knockback,
-      slow: spec.slow ?? 0,
-      dieAt: this.time + spec.life,
-    });
-    this.emit('shot', { id: owner.id, kind: spec.kind });
+    for (const b of this.balls) {
+      if (!b.active) continue;
+      const d = dist(owner, b);
+      if (d > R + b.r || d < 0.01) continue;
+      const f = 1 - Math.min(1, d / (R + b.r)) * 0.55;
+      b.vx += ((b.x - owner.x) / d) * power * f;
+      b.vy += ((b.y - owner.y) / d) * power * f;
+      b.lastHitBy = owner.id;
+      b.lastHitAt = this.time;
+    }
   }
 
-  meleeCone(owner, { range, arc, damage, knockback }) {
-    this.emit('punch', { id: owner.id, aim: owner.aim });
-    const reach = range + PLAYER.radius;
-    for (const target of [...this.players, ...this.decoys]) {
-      if (target === owner || target.owner === owner.id) continue;
-      if (target.state && target.state !== 'alive') continue;
-      const d = dist(owner, target);
-      if (d > reach + PLAYER.radius) continue;
-      const ang = Math.atan2(target.y - owner.y, target.x - owner.x);
-      if (d > PLAYER.radius && Math.abs(angleDiff(ang, owner.aim)) > arc / 2) continue;
-      if (!this.lineOfSight(owner, target)) continue;
-      const dx = d > 0.01 ? (target.x - owner.x) / d : Math.cos(owner.aim);
-      const dy = d > 0.01 ? (target.y - owner.y) / d : Math.sin(owner.aim);
-      if (target.state) {
-        CombatSystem.hit(this, owner, target, { damage, knockback, dirx: dx, diry: dy, cause: 'glove' });
-      } else {
-        this.popDecoy(target);
-      }
+  // Aimant : attire les figurines (et les boules) proches vers le lanceur.
+  magnet(owner, R, speed) {
+    this.emit('magnet', { id: owner.id, x: owner.x, y: owner.y, r: R });
+    const pull = (o, m) => {
+      const d = dist(owner, o);
+      if (d > R || d < PLAYER.radius * 2.2) return false;
+      const k = speed * (0.6 + 0.4 * (1 - d / R)) / m;
+      o.vx = ((owner.x - o.x) / d) * k;
+      o.vy = ((owner.y - o.y) / d) * k;
+      return true;
+    };
+    for (const p of this.players) {
+      if (p === owner || p.state !== 'alive' || this.time < p.bubbleUntil || this.time < p.airborneUntil) continue;
+      if (pull(p, p.mass ?? 1)) { p.lastHitBy = owner.id; p.lastHitAt = this.time; this.emit('push', { id: p.id, by: owner.id, x: p.x, y: p.y }); }
     }
+    for (const b of this.balls) if (b.active && pull(b, BALL.mass)) { b.lastHitBy = owner.id; b.lastHitAt = this.time; }
   }
 
   placeTrap(owner, kind) {
@@ -183,7 +175,7 @@ export class World {
       const f = 1 - Math.min(1, d / (R + PLAYER.radius)) * 0.5;
       const dx = d > 0.01 ? (p.x - b.x) / d : 1;
       const dy = d > 0.01 ? (p.y - b.y) / d : 0;
-      CombatSystem.hit(this, owner, p, { damage: Math.round(25 * f), knockback: 780 * f, dirx: dx, diry: dy, cause: 'bomb' });
+      CombatSystem.hit(this, owner, p, { knockback: (780 * f) / (p.mass ?? 1), dirx: dx, diry: dy, cause: 'bomb' });
     }
     for (const dcy of this.decoys) if (dist(b, dcy) < R) this.popDecoy(dcy);
   }
@@ -215,12 +207,10 @@ export class World {
     this.collidePlayers();
     this.stepBalls(dt);
     for (const p of this.players) this.postPlayer(p);
-    this.stepProjectiles(dt);
     this.stepTraps();
     this.stepBombs(dt);
     this.stepDecoys(dt);
     CombatSystem.update(this);
-    this.projectiles = this.projectiles.filter((pr) => !pr.dead && t < pr.dieAt);
     this.decoys = this.decoys.filter((d) => !d.dead);
   }
 
@@ -231,8 +221,6 @@ export class World {
       p.pendingFlick = null;
       return;
     }
-    InventorySystem.update(p, t);
-
     if (p.state === 'falling') {
       p.vx *= 0.9;
       p.vy *= 0.9;
@@ -247,17 +235,14 @@ export class World {
     const toppled = t < p.toppleUntil;
     const slipping = t < p.slipUntil;
     const airborne = t < p.airborneUntil;
-    const busy = !!p.channel;
     const stunned = toppled || slipping;
-    p.energy = Math.min(PLAYER.energyMax, (p.energy ?? PLAYER.energyMax) + PLAYER.energyRegen * dt);
+    const emax = p.energyMax ?? PLAYER.energyMax;
+    p.energy = Math.min(emax, (p.energy ?? emax) + PLAYER.energyRegen * (p.regenMul ?? 1) * this.rules.regen * dt);
 
-    // Actions ponctuelles (objet, sélection d'emplacement) puis pichenette.
+    // Objet (bouton rond) puis pichenette.
     const actions = p.actions.splice(0);
-    const isSwitch = (a) => a === 'wn' || a === 'wp' || (a[0] === 's' && a.length === 2 && ITEMS_WEAPON_SWITCH(p, a));
-    for (const a of actions) {
-      if (frozen || stunned || busy) { if (isSwitch(a)) this.doAction(p, a); } else this.doAction(p, a);
-    }
-    if (p.pendingFlick && !frozen && !stunned && !busy && !airborne) {
+    if (!frozen && !stunned) for (const a of actions) this.doAction(p, a);
+    if (p.pendingFlick && !frozen && !stunned && !airborne) {
       const f = p.pendingFlick;
       if (f.hop) this.hop(p, f.a);
       else this.flick(p, f.a, f.p);
@@ -280,30 +265,7 @@ export class World {
     }
     this.collideStatic(p, speedBefore);
 
-    // Posée : la figurine vise et tire seule sur l'adversaire visible le plus proche.
     p.settled = Math.hypot(p.vx, p.vy) < PLAYER.settledSpeed;
-    if (!frozen && !stunned && !busy && !airborne && p.settled) this.autoFire(p);
-  }
-
-  autoFire(p) {
-    let best = null;
-    let bestD = PLAYER.autoFireRange;
-    const t = this.time;
-    for (const o of this.players) {
-      if (o === p || o.state !== 'alive' || t < o.invulnUntil) continue;
-      const d = dist(p, o);
-      if (d < bestD && this.lineOfSight(p, o)) { bestD = d; best = o; }
-    }
-    for (const o of this.decoys) {
-      if (o.owner === p.id || o.dead) continue;
-      const d = dist(p, o);
-      if (d < bestD && this.lineOfSight(p, o)) { bestD = d; best = o; }
-    }
-    if (!best) return;
-    // Visée légèrement anticipée sur la cible en mouvement.
-    const lead = (bestD / 950) * 0.5;
-    p.aim = Math.atan2(best.y + (best.vy ?? 0) * lead - p.y, best.x + (best.vx ?? 0) * lead - p.x);
-    InventorySystem.autoFire(p, this, best, bestD);
   }
 
   // Pichenette : se lancer comme une bille. Percuter quelqu'un lui transmet l'élan.
@@ -312,7 +274,7 @@ export class World {
     if (this.rules.frozen || !Number.isFinite(angle)) return false;
     if ((p.energy ?? 0) < PLAYER.flickCost) return false;
     const pw = Math.max(0, Math.min(1, power));
-    const factor = (p.speedFactor ?? 1) * (t < p.slowUntil && t >= p.bubbleUntil ? 0.6 : 1);
+    const factor = (p.speedFactor ?? 1) * (p.powerMul ?? 1) * (t < p.slowUntil && t >= p.bubbleUntil ? 0.6 : 1);
     const v = flickSpeed(pw, factor);
     p.vx = Math.cos(angle) * v;
     p.vy = Math.sin(angle) * v;
@@ -327,7 +289,7 @@ export class World {
   // Petite tape : petit bond pour se placer finement.
   hop(p, angle) {
     if (this.rules.frozen || !Number.isFinite(angle) || (p.energy ?? 0) < PLAYER.hopCost) return false;
-    const v = PLAYER.hopSpeed * (p.speedFactor ?? 1);
+    const v = PLAYER.hopSpeed * (p.speedFactor ?? 1) * (p.powerMul ?? 1);
     p.vx = Math.cos(angle) * v;
     p.vy = Math.sin(angle) * v;
     p.energy -= PLAYER.hopCost;
@@ -341,21 +303,10 @@ export class World {
     if (this.time >= p.toppleUntil) this.emit('topple', { id: p.id, x: p.x, y: p.y });
     p.toppleUntil = this.time + PLAYER.toppleTime;
     p.flingUntil = 0;
-    p.channel = null;
   }
 
   doAction(p, a) {
-    if (a === 'item') {
-      InventorySystem.useItem(p, this);
-    } else if (a === 'gadget') {
-      InventorySystem.useGadget(p, this);
-    } else if (a === 'c0' || a === 'c1') {
-      InventorySystem.useConsumable(p, this, a === 'c0' ? 0 : 1);
-    } else if (a === 's0' || a === 's1' || a === 's2') {
-      InventorySystem.pressSlot(p, this, Number(a[1]));
-    } else if (a === 'wn' || a === 'wp') {
-      InventorySystem.cycleWeapon(p, this, a === 'wn' ? 1 : -1);
-    }
+    if (a === 'item') InventorySystem.useItem(p, this);
   }
 
   collideStatic(p, speedBefore = 0) {
@@ -404,7 +355,9 @@ export class World {
       if (pk) {
         b.active = false;
         b.backAt = t + BALL.respawn;
-        this.emit('ballPocket', { x: pk.x, y: pk.y, num: b.num, by: t - b.lastHitAt < PLAYER.killCreditWindow ? b.lastHitBy : null });
+        const by = t - b.lastHitAt < PLAYER.killCreditWindow ? b.lastHitBy : null;
+        this.emit('ballPocket', { x: pk.x, y: pk.y, num: b.num, by });
+        if (by) this.hooks.onBallPocket?.(by, b);
       }
     }
     const balls = this.balls.filter((b) => b.active);
@@ -429,7 +382,7 @@ export class World {
         const vp = Math.hypot(p.vx, p.vy);
         const vb = Math.hypot(b.vx, b.vy);
         const shield = t < p.bubbleUntil;
-        const hit = this.bounce(p, b, PLAYER.radius + b.r, shield ? 1e6 : 1, BALL.mass, BALL.playerRestitution);
+        const hit = this.bounce(p, b, PLAYER.radius + b.r, shield ? 1e6 : p.mass ?? 1, BALL.mass, BALL.playerRestitution);
         if (hit <= 0) continue;
         if (vp >= vb) {
           const who = this.creditOf(p); // la figurine (ou celui qui l'a lancée) a tapé la boule
@@ -475,36 +428,40 @@ export class World {
 
   // Chocs entre figurines : séparation, puis échange d'élan comme deux billes de plastique.
   // Une figurine lancée par pichenette transmet presque toute sa vitesse (effet berceau de Newton).
+  // Les masses (Lest de plomb) et la Coque à pointes modulent l'échange.
   collidePlayers() {
     const t = this.time;
     const ps = this.players.filter((p) => p.state === 'alive' && t >= p.airborneUntil);
     const minD = PLAYER.radius * 2;
+    const massOf = (p) => (t < p.bubbleUntil ? 8 : p.mass ?? 1);
     for (let i = 0; i < ps.length; i++) {
       for (let j = i + 1; j < ps.length; j++) {
         let a = ps[i];
         let b = ps[j];
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
         const d = Math.hypot(dx, dy);
         if (d >= minD || d < 0.001) continue;
         const nx = dx / d;
         const ny = dy / d;
-        const push = (minD - d) / 2;
-        a.x -= nx * push; a.y -= ny * push;
-        b.x += nx * push; b.y += ny * push;
+        const ma = massOf(a);
+        const mb = massOf(b);
+        const inv = 1 / ma + 1 / mb;
+        const push = minD - d;
+        a.x -= nx * push * (1 / ma) / inv; a.y -= ny * push * (1 / ma) / inv;
+        b.x += nx * push * (1 / mb) / inv; b.y += ny * push * (1 / mb) / inv;
         // Vitesse de rapprochement le long de la normale (positive = ils se rentrent dedans).
         const vn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
         if (vn <= 0) continue;
         const aFling = t < a.flingUntil;
         const bFling = t < b.flingUntil;
         if (!aFling && !bFling) {
-          // Deux palets qui glissent : rebond élastique, sans dégâts.
-          const jSoft = ((1 + PLAYER.restitution) * vn) / 2;
-          a.vx -= nx * jSoft; a.vy -= ny * jSoft;
-          b.vx += nx * jSoft; b.vy += ny * jSoft;
-          if (vn > 200) this.emit('clack', { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2), power: Math.round(jSoft) });
+          // Deux palets qui glissent : rebond élastique.
+          const jSoft = ((1 + PLAYER.restitution) * vn) / inv;
+          a.vx -= nx * jSoft / ma; a.vy -= ny * jSoft / ma;
+          b.vx += nx * jSoft / mb; b.vy += ny * jSoft / mb;
+          if (vn > 200) this.emit('clack', { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2), power: Math.round(jSoft / 2) });
           if (Math.hypot(a.vx, a.vy) > 150 || Math.hypot(b.vx, b.vy) > 150) {
-            // L'attaquant est le plus rapide avant le choc : il est crédité d'une éventuelle chute.
             // Après l'échange d'élan, c'est la victime qui file : l'autre était l'attaquant.
             const victim = Math.hypot(a.vx, a.vy) > Math.hypot(b.vx, b.vy) ? a : b;
             const attacker = victim === a ? b : a;
@@ -516,22 +473,26 @@ export class World {
         // Le « frappeur » est celui qui est lancé (le plus rapide si les deux le sont).
         let sx = nx;
         let sy = ny;
+        let mA = ma;
+        let mB = mb;
         if (!aFling || (bFling && Math.hypot(b.vx, b.vy) > Math.hypot(a.vx, a.vy))) {
           [a, b] = [b, a];
+          [mA, mB] = [mB, mA];
           sx = -nx; sy = -ny;
         }
-        const impulse = ((1 + PLAYER.restitution) * vn) / 2;
+        // Impulsion ramenée à des masses unitaires (même échelle qu'avant les atouts).
+        const impulse = ((1 + PLAYER.restitution) * vn) / inv / Math.sqrt(mA * mB);
+        const J = ((1 + PLAYER.restitution) * vn) / inv;
         this.emit('clack', { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2), power: Math.round(impulse) });
-        const damage = Math.round(Math.max(0, Math.min(15, (impulse - 220) / 35)));
         const absorbed = t < b.bubbleUntil || t < b.invulnUntil;
         if (absorbed) {
           // Rebond sur la bulle : le frappeur repart en arrière.
           a.vx -= sx * vn * (1 + PLAYER.restitution); a.vy -= sy * vn * (1 + PLAYER.restitution);
           CombatSystem.hit(this, a, b, { cause: 'flick' });
         } else {
-          a.vx -= sx * impulse; a.vy -= sy * impulse;
-          CombatSystem.hit(this, a, b, { damage, knockback: impulse, dirx: sx, diry: sy, cause: 'flick' });
-          if (impulse >= PLAYER.slamImpulse && !absorbed) {
+          a.vx -= sx * J / mA; a.vy -= sy * J / mA;
+          CombatSystem.hit(this, a, b, { knockback: (J / mB) * (a.punch ?? 1), dirx: sx, diry: sy, cause: 'flick' });
+          if (impulse * (a.punch ?? 1) >= PLAYER.slamImpulse) {
             this.emit('slam', { id: a.id, victim: b.id, x: Math.round(b.x), y: Math.round(b.y) });
             this.hooks.onSlam?.(a, b, impulse);
           }
@@ -547,11 +508,29 @@ export class World {
 
   postPlayer(p) {
     if (p.state !== 'alive') return;
+    // Dernière position sûre (au moins un rayon à l'intérieur du sol) : point de retour de la bouée.
+    const R = PLAYER.radius;
+    if (this.isGround(p.x, p.y) && this.isGround(p.x + R, p.y) && this.isGround(p.x - R, p.y) && this.isGround(p.x, p.y + R) && this.isGround(p.x, p.y - R)) {
+      p.safe = { x: p.x, y: p.y };
+    }
     // Bornes de la carte (le vide s'étend au-delà).
     p.x = Math.max(-200, Math.min(this.map.width + 200, p.x));
     p.y = Math.max(-200, Math.min(this.map.height + 200, p.y));
     if (this.time >= p.airborneUntil && !this.isGround(p.x, p.y)) {
       if (this.rules.frozen) return;
+      // Bouée (ou bouclier du champion) : rattrapé au bord, renvoyé vers le dernier sol sûr.
+      if ((p.saves ?? 0) > 0 || p.championShield) {
+        if (p.championShield) p.championShield = false;
+        else p.saves -= 1;
+        const back = p.safe ?? this.map.center;
+        p.x = back.x;
+        p.y = back.y;
+        p.vx *= -0.35;
+        p.vy *= -0.35;
+        p.flingUntil = 0;
+        this.emit('saved', { id: p.id, x: Math.round(p.x), y: Math.round(p.y) });
+        return;
+      }
       const pk = pocketAt(this.map, p.x, p.y);
       if (pk) {
         // Empochée : la figurine file au fond de la poche.
@@ -564,65 +543,6 @@ export class World {
     }
   }
 
-  stepProjectiles(dt) {
-    for (const pr of this.projectiles) {
-      if (pr.dead) continue;
-      const x1 = pr.x + pr.vx * dt;
-      const y1 = pr.y + pr.vy * dt;
-      let bestT = this.rayWalls(pr.x, pr.y, x1, y1, pr.radius * 0.5);
-      let target = null;
-      for (const p of this.players) {
-        if (p.id === pr.owner || p.state !== 'alive') continue;
-        const tt = segmentCircleT(pr.x, pr.y, x1, y1, p.x, p.y, PLAYER.radius + pr.radius);
-        if (tt !== null && tt < bestT) { bestT = tt; target = p; }
-      }
-      for (const d of this.decoys) {
-        if (d.owner === pr.owner || d.dead) continue;
-        const tt = segmentCircleT(pr.x, pr.y, x1, y1, d.x, d.y, PLAYER.radius + pr.radius);
-        if (tt !== null && tt < bestT) { bestT = tt; target = d; }
-      }
-      let ballHit = null;
-      for (const b of this.balls) {
-        if (!b.active) continue;
-        const tt = segmentCircleT(pr.x, pr.y, x1, y1, b.x, b.y, b.r + pr.radius);
-        if (tt !== null && tt < bestT) { bestT = tt; target = null; ballHit = b; }
-      }
-      if (ballHit) {
-        // Tirer dans une boule la pousse : de quoi faire des carambolages à distance.
-        pr.x += (x1 - pr.x) * bestT;
-        pr.y += (y1 - pr.y) * bestT;
-        pr.dead = true;
-        const sp = Math.hypot(pr.vx, pr.vy) || 1;
-        ballHit.vx += (pr.vx / sp) * pr.knockback * 2.2;
-        ballHit.vy += (pr.vy / sp) * pr.knockback * 2.2;
-        ballHit.lastHitBy = pr.owner;
-        ballHit.lastHitAt = this.time;
-        this.emit('impact', { x: pr.x, y: pr.y, kind: pr.kind });
-        continue;
-      }
-      pr.x += (x1 - pr.x) * bestT;
-      pr.y += (y1 - pr.y) * bestT;
-      if (bestT >= 1) continue;
-      pr.dead = true;
-      if (!target) {
-        this.emit('impact', { x: pr.x, y: pr.y, kind: pr.kind });
-        continue;
-      }
-      if (!target.state) {
-        target.hp -= 1;
-        this.emit('impact', { x: pr.x, y: pr.y, kind: pr.kind });
-        if (target.hp <= 0) this.popDecoy(target);
-        continue;
-      }
-      const sp = Math.hypot(pr.vx, pr.vy) || 1;
-      const owner = this.players.find((p) => p.id === pr.owner) ?? null;
-      this.emit('impact', { x: pr.x, y: pr.y, kind: pr.kind, hit: target.id });
-      CombatSystem.hit(this, owner, target, {
-        damage: pr.damage, knockback: pr.knockback, dirx: pr.vx / sp, diry: pr.vy / sp, slow: pr.slow, cause: pr.kind,
-      });
-    }
-  }
-
   stepTraps() {
     const t = this.time;
     for (const tr of this.traps) {
@@ -632,7 +552,6 @@ export class World {
         if (Math.hypot(p.x - tr.x, p.y - tr.y) > PLAYER.radius + tr.r) continue;
         tr.dead = true;
         p.slipUntil = t + 1.1;
-        p.channel = null;
         const sp = Math.hypot(p.vx, p.vy);
         const a = sp > 20 ? Math.atan2(p.vy, p.vx) : this.rng.range(0, Math.PI * 2);
         const s = Math.max(sp, 400);
@@ -695,9 +614,7 @@ export class World {
         x: r(p.x),
         y: r(p.y),
         a: Math.round(p.aim * 100) / 100,
-        hp: p.hp,
         s: p.state,
-        w: p.inv.slots[p.inv.active]?.id ?? 'pistol',
         f: [
           t < p.invulnUntil ? 'i' : '',
           t < p.bubbleUntil ? 'b' : '',
@@ -708,10 +625,9 @@ export class World {
           p.settled ? '' : 'm',
           t < p.toppleUntil ? 'k' : '',
           p.championShield ? 'c' : '',
-          p.channel ? 'p' : '',
+          p.mass > 1.2 ? 'h' : '',
         ].join(''),
       })),
-      proj: this.projectiles.map((p) => [p.id, r(p.x), r(p.y), p.kind, p.radius]),
       traps: this.traps.map((tr) => [tr.id, r(tr.x), r(tr.y), t >= tr.armAt ? 1 : 0]),
       bombs: this.bombs.map((b) => [b.id, r(b.x), r(b.y), Math.max(0, Math.round((b.explodeAt - t) * 10) / 10)]),
       balls: this.balls.filter((b) => b.active).map((b) => [b.id, r(b.x), r(b.y), b.num]),
@@ -725,10 +641,12 @@ export class World {
 export function resetBody(p, pos) {
   Object.assign(p, {
     x: pos.x, y: pos.y, vx: 0, vy: 0,
-    hp: PLAYER.maxHp, state: 'alive', fallUntil: 0, respawnAt: 0,
-    invulnUntil: 0, flingUntil: 0, toppleUntil: 0, pendingFlick: null, energy: PLAYER.energyMax, settled: true, slowUntil: 0, slipUntil: 0,
+    state: 'alive', fallUntil: 0, respawnAt: 0,
+    invulnUntil: 0, flingUntil: 0, toppleUntil: 0, pendingFlick: null, settled: true, slowUntil: 0, slipUntil: 0,
     airborneUntil: 0, bubbleUntil: 0, lastHitBy: null, lastHitAt: -99,
-    moveAngle: null, speedFactor: 1, holed: false,
+    moveAngle: null, speedFactor: 1, holed: false, safe: { x: pos.x, y: pos.y },
   });
   p.actions.length = 0;
+  if (p.inv) InventorySystem.applyStats(p); // atouts : masse, charges, bouée…
+  p.energy = p.energyMax ?? PLAYER.energyMax;
 }

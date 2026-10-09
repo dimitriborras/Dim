@@ -1,7 +1,7 @@
 # PLASTIC PANIC — prototype jouable
 
 Party game multijoueur 2D (2 à 8 joueurs, 4 à 8 recommandés) : des figurines en plastique enchaînent
-mini-jeux, achats de gadgets et combats dans une arène commune, puis s'affrontent en finale.
+mini-jeux, achats de pièces détachées et mêlées sur un billard, puis s'affrontent en finale.
 
 ## Mettre le jeu en ligne (jouer depuis un téléphone)
 
@@ -63,9 +63,9 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
 - poser le doigt n'importe où, tirer en arrière, relâcher : **pichenette**, la figurine part comme une bille ;
   la trajectoire exacte s'affiche avant de lâcher (rebonds marqués, croix rouge si elle finirait dans le vide) ;
 - petite tape : petit bond vers l'endroit touché ;
-- posée, la figurine **tire toute seule** sur l'adversaire visible le plus proche ;
-- bouton rond (ou E / Espace) : utiliser son objet ; B : boutique ; Tab : scores ;
-- manette : stick gauche pour viser, A maintenu puis relâché pour la pichenette, B pour l'objet.
+- pas d'armes : on marque en **percutant** et en **poussant** les autres (poches, vide) ;
+- bouton rond (ou E / Espace) : utiliser son gadget ; B : distributeur ; Tab : scores ;
+- manette : stick gauche pour viser, A maintenu puis relâché pour la pichenette, B pour le gadget.
 
 ## Physique et présentation
 
@@ -76,13 +76,12 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   suit est créditée à l'attaquant. Seul un très gros choc renverse une figurine (0,6 s sans contrôle).
 - **Réactivité** : la physique de sa propre figurine (pichenette, rebonds) est calculée immédiatement sur
   l'appareil puis recalée sur le serveur, même avec du ping (`client/predict.js`, `shared/game/movement.js`).
-- **Le billard** (lobby, combat, finale) : tapis vert, bandes qui renvoient, six poches, et un triangle de
-  boules **mobiles** : on les percute, elles se percutent et percutent les figurines (carambolages). Tirer dans
-  une boule la pousse aussi. Le crédit d'une chute remonte la chaîne jusqu'à l'auteur du coup, et une boule
-  empochée revient sur sa mouche après 4 s. **Gros choc** (« Carton ! ») : +1 au lobby, +1 point en combat
-  (au plus toutes les 2 s et 5 fois par combat). Plus de vide sur
+- **Le billard** (lobby, Mêlée, finale) : tapis vert, bandes qui renvoient, six poches, et un triangle de
+  boules **mobiles** : on les percute, elles se percutent et percutent les figurines (carambolages). Le crédit d'une chute remonte la chaîne jusqu'à l'auteur du coup, et une boule
+  empochée revient sur sa mouche après 4 s. **Gros choc** (« Carton ! ») : +1 au lobby, +1 point en Mêlée
+  (au plus toutes les 2 s et 5 fois par Mêlée). Plus de vide sur
   les bords : on ne tombe que dans les poches. Pousser un adversaire dans une poche compte comme une
-  élimination ; au lobby (billard libre, sans tir), chaque adversaire empoché rapporte 🎱 +3 et chaque gros choc +1. Les bots visent
+  élimination ; au lobby (billard libre), chaque adversaire empoché rapporte 🎱 +3 et chaque gros choc +1. Les bots visent
   comme au billard (bille fantôme derrière la cible, angle de coupe, puissance dosée).
 - **Diorama** : vu de trois quarts, la nuit ; en vertical, la vue pivote d'un quart de tour pour que la table
   s'affiche dans sa longueur (seul l'affichage pivote, la simulation est la même pour tous).
@@ -91,12 +90,12 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
 
 ## Boucle de partie
 
-`lobby (entraînement libre)` → pour chaque manche : `présentation (4 s)` → `mini-jeu (60–75 s)` →
-`résultats + boutique sûre (8 s)` → `combat (35 s)` → `derniers achats (7 s)` → … → `finale (75 s)` →
+`lobby (billard libre)` → pour chaque manche : `présentation (4 s)` → `mini-jeu` →
+`résultats + Distributeur (14 s)` → `Mêlée (40 s)` → `bilan (4 s)` → … → `finale (75 s)` →
 `classement final (15 s)` → retour au lobby.
 
 - **Ordre des manches** : La Rafale ouvre la partie (gestes simples pour découvrir), puis on alterne
-  avec les mini-jeux à la physique de palet : Rafale, jetons ou course, Rafale, l'autre, … puis la finale.
+  avec les mini-jeux à la physique de palet, sans répéter le même, puis la finale.
 - **La Rafale (micro-jeux à la WarioWare)** : 10 micro-jeux de quelques secondes joués par tous en même temps.
   Chacun sollicite une capacité, annoncée avec son niveau (★ à ★★★) :
   - ⚡ réflexe : *Dégaine !*, *Tape les taupes !* (jamais la bombe) ;
@@ -108,25 +107,35 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   - 🔢 calcul : *Calcule !* ;
   - 🎯 précision : *Vise !* (cible qui bouge, trois essais) ;
   - 🗣️ langage : *Orthographe !* ;
+  - 🌬️ souffle : *Souffle !* — on souffle **dans le micro du téléphone** pour éteindre les bougies. Le niveau
+    sonore est comparé à un plancher de bruit qui s'adapte à la pièce ; rien n'est enregistré ni envoyé,
+    seule une intensité 0..1 part au serveur, qui plafonne le débit. Sans micro (refusé, PC), on frotte l'écran ;
+  - ⚔️ duel : *Tire !* (tir à la corde), *Duel !* (le plus rapide au signal), *Chifoumi !*. Les joueurs sont
+    appariés au hasard ; avec un nombre impair, le dernier affronte un fantôme. Égalité ou inaction : personne
+    ne gagne ;
   - 🎱 physique de palet : *Dans le cercle !*, *Reste sur la table !*, *Mini-golf !*.
 
   La séquence est construite pour rester lisible : échauffement en niveau 1, montée en difficulté,
-  jamais deux fois de suite la même capacité, pauses « palet » aux manches 4 et 7, et un **boss** physique
-  en dernier (plus long, 2 points). Le rythme accélère tous les trois micro-jeux. Les micro-jeux déjà
-  joués dans le match sont évités à la Rafale suivante. Les gestes de réflexe sont horodatés à l'heure
-  du serveur pour rester équitables malgré le ping. Ajouter un micro-jeu = ajouter une définition
-  (avec `skill` et `level`) dans `shared/game/minigames/micros.js`.
-- **Mini-jeux** : *Course sur le tapis* (circuit avec trous, ressorts, plateforme mobile ; le pistolet repousse
-  sans blesser) et *Ruée sur les jetons* (un tir fait lâcher un jeton). **Finale** : *La couronne*
-  (temps de possession, tout l'arsenal autorisé).
-- **Combat** : 100 PV, pistolet 20 dégâts / 0,4 s, réapparition après 3 s avec 1 s d'invulnérabilité,
-  chute dans le vide = élimination créditée au dernier attaquant.
-- **Arène** : murs et blocs qui arrêtent les tirs, bumpers, bande glissante près des bords
-  (recul ×1,35), fosse centrale, ressorts et plateforme mobile.
-- **Champion** : le vainqueur du mini-jeu reçoit un bouclier qui absorbe une attaque, mais une prime
-  (+2 pts, +30 crédits) est annoncée sur lui. Ces deux effets s'arrêtent à la fin du combat.
-- **Boutique** : achat immédiat pendant les phases sûres. En combat, une transaction prend 1,5 s :
-  le joueur est ralenti et ne peut pas tirer.
+  jamais deux fois de suite la même capacité, un face-à-face en duel à la manche 5, pauses « palet » aux
+  manches 4 et 7, et un **boss** physique en dernier (plus long, 2 points). Le rythme accélère tous les trois
+  micro-jeux. Les micro-jeux déjà joués dans le match sont évités à la Rafale suivante. Les gestes de réflexe
+  sont horodatés à l'heure du serveur pour rester équitables malgré le ping. Ajouter un micro-jeu = ajouter une
+  définition (avec `skill` et `level`) dans `shared/game/minigames/micros.js`.
+- **Mini-jeux de palet** (aucune arme, que des pichenettes) :
+  - *Le Palet* (inspiré du crokinole et du curling) : 3 mènes, **2 pichenettes** par mène, tout le monde en même
+    temps ; on marque 5, 3 ou 1 point selon l'anneau où l'on s'arrête… ou l'on dégomme ceux qui y sont ;
+  - *Les poches gloutonnes* : les poches du billard grossissent, pas de deuxième chance, le dernier debout gagne ;
+  - *Course sur le tapis* : circuit avec trous, ressorts et plateforme mobile, on bouscule les autres dans les trous ;
+  - *Ruée sur les jetons* : percuter quelqu'un lui fait lâcher un jeton (qu'il ne peut pas reprendre tout de suite).
+- **Finale** : *La couronne* — temps de possession ; un « Carton ! » sur le porteur la lui vole.
+- **La Mêlée** (remplace l'ancien combat au pistolet) : 40 s sur le billard, gadgets autorisés. Empocher un
+  adversaire : 3 pts (puis 1 et 0 sur la même victime) ; Carton : +1 ; boule numérotée empochée : +1 (3 au plus) ;
+  jamais tombé : +2.
+- **Champion** : le vainqueur du mini-jeu reçoit une bouée gratuite, mais une prime (+2 pts, +30 crédits)
+  est annoncée sur lui jusqu'à la fin de la Mêlée.
+- **Le Distributeur** (remplace la boutique) : à chaque manche, chaque joueur tire sa propre main de 3 capsules
+  (au moins un atout et un gadget qu'il n'a pas). Achat immédiat, relance à 15 crédits ; la moitié basse du
+  classement a une relance gratuite (coup de pouce discret). Inspiré du choix de cartes de *ROUNDS*.
 
 ### Économie (valeurs de départ, toutes dans `shared/constants.js`)
 
@@ -134,28 +143,33 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
 | --- | --- |
 | 1er / 2e / 3e du mini-jeu | 100 cr + 10 pts / 75 cr + 7 pts / 55 cr + 5 pts |
 | Participation | 35 cr + 3 pts |
-| Élimination | 3 pts (+10 cr), puis 1 et 0 pt pour la même victime dans le même combat |
-| Élimination du champion | +2 pts, +30 cr |
-| Survivre au combat | 1 pt |
+| Empocher un adversaire (Mêlée) | 3 pts (+10 cr), puis 1 et 0 pt pour la même victime |
+| Empocher le champion | +2 pts, +30 cr |
+| Carton (gros choc) / boule empochée | +1 pt (5 cartons et 3 boules au plus par Mêlée) |
+| Ne jamais tomber pendant la Mêlée | 2 pts |
 | Contrat de rattrapage (moitié basse du classement) | 30–40 cr, jamais de points |
 
 Les crédits ne se convertissent jamais en points de tournoi.
 
-### Objets (`shared/items.js`)
+### Pièces détachées (`shared/items.js`)
 
-| Objet | Type | Fonction |
+| Pièce | Type | Effet |
 | --- | --- | --- |
-| Pistolet à impulsion | arme de départ | dégâts |
-| Pistolet Mk II (90) | amélioration, 1 niveau max | dégâts |
-| Lance-colle (80) | arme | ralentir |
-| Gant à ressort (70) | arme de mêlée | déplacer / pousser |
-| Bulle-bouclier (85) | gadget | protéger |
-| Ressort de poche (75) | gadget | déplacement (saute le vide) |
-| Peau de banane (30) | consommable | contrôle de zone (piège aussi son poseur) |
-| Téléporteur jetable (40) | consommable | repositionnement, ne traverse pas les murs |
-| Bombe à confettis / Leurre (offre tournante) | consommable | zone / tromper |
+| ⚓ Lest de plomb (70) | atout | +60 % de masse : dur à pousser, pousse plus loin |
+| 🔋 Pile de rechange (60) | atout | 4 charges de pichenette au lieu de 3 |
+| ⚡ Recharge turbo (60) | atout | charges 40 % plus rapides |
+| 🏹 Élastique renforcé (70) | atout | pichenettes 12 % plus rapides |
+| 💢 Coque à pointes (80) | atout | chocs 30 % plus forts |
+| 🛟 Bouée (70) | atout | rattrapé une fois par phase au bord d'une poche ou du vide |
+| 💥 Pétard (60) | gadget, 2 charges | onde de choc autour de soi |
+| 🫧 Bulle d'ancrage (50) | gadget, 2 charges | 1,4 s inébranlable |
+| 🧲 Aimant (60) | gadget, 2 charges | attire figurines et boules |
+| 🌀 Ressort de poche (50) | gadget, 2 charges | bond par-dessus les poches |
+| 🍌 Peaux de banane (40) | gadget, 3 charges | piège glissant |
+| 🎉 Bombe à confettis (55) | gadget, 2 charges | souffle à retardement |
+| 🌟 Téléporteur (50) | gadget, 1 charge | saut de 260, jamais à travers un mur |
 
-Inventaire : 3 emplacements permanents (le n°1 est toujours le pistolet) et 2 consommables.
+Équipement : 3 atouts (le 4e remplace le plus ancien) et un gadget sur le bouton rond, rechargé à chaque phase.
 
 ## Architecture
 
@@ -165,23 +179,25 @@ shared/                          code commun serveur / navigateur (aucune dépen
   constants.js  maps.js  items.js  protocol.js (validation des messages)  geometry.js  rng.js
   game/GameRoom.js               salles, joueurs, hôte, connexions, diffusion des instantanés
   game/MatchManager.js           phases, chronomètres, manches, finale
-  game/World.js                  PlayerController serveur : déplacement, projectiles, pièges, arène
-  game/CombatSystem.js           santé, impacts, éliminations, réapparitions
-  game/InventorySystem.js        équipement, consommables, munitions, recharges
-  game/ShopSystem.js             catalogue, prix, achats, rotation
+  game/World.js                  simulation : palets, masses, boules, gadgets, pièges, arène
+  game/CombatSystem.js           chocs, chutes, éliminations, réapparitions
+  game/InventorySystem.js        atouts (caractéristiques de la figurine) et gadget à charges
+  game/ShopSystem.js             le Distributeur : mains personnelles, achats, relances
   game/ScoreSystem.js            crédits, points, primes, contrats, classement
   game/Bot.js                    IA qui envoie les mêmes entrées qu'un joueur
-  game/minigames/                MinigameRegistry + Course, Jetons, Finale couronne
-client/                          rendu Canvas 2D, HUD, boutique, commandes clavier/souris/tactile
+  game/minigames/                MinigameRegistry + Rafale (micros.js), Palet, Poches gloutonnes, Course,
+                                 Jetons, Finale couronne
+client/                          rendu Canvas 2D, HUD, Distributeur, micro (mic.js), commandes tactiles
 test/                            tests node:test
 ```
 
 - **Serveur faisant autorité** : le client n'envoie que des intentions (direction, angle, boutons,
-  demande d'achat). Dégâts, éliminations, crédits et points sont calculés uniquement par la simulation.
+  demande d'achat). Chocs, éliminations, crédits et points sont calculés uniquement par la simulation.
   Les messages sont validés et bornés (`shared/protocol.js`).
 - **Ajouter un mini-jeu** : une classe qui implémente `initialize / start / update / isOver / finish / hud / dispose`,
   enregistrée dans `defaultRegistry()` (`MatchManager.js`).
-- **Ajouter un objet** : une entrée dans `ITEMS` avec son `use(ctx)` ; la boutique n'a pas à être modifiée.
+- **Ajouter une pièce** : une entrée dans `ITEMS` (atout : `mods` ; gadget : `charges` et `use(ctx)`) ;
+  le Distributeur n'a pas à être modifié.
 - **Réseau** : 30 ticks/s, 15 instantanés/s, interpolation des autres joueurs (110 ms). Le joueur local est
   prédit (`client/predict.js`) : ses commandes sont appliquées tout de suite avec la même physique que le serveur
   (`shared/game/movement.js`), puis rejouées à partir de chaque état confirmé. La visée est locale.

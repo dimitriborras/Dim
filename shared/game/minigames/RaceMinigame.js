@@ -1,12 +1,12 @@
 import { RACE_TRACK } from '../../maps.js';
 import { groupRanking } from './MinigameRegistry.js';
 
-// Course : traverser le circuit avant les autres. Le pistolet ne fait pas de dégâts,
-// il repousse seulement. Une chute renvoie au dernier point de contrôle.
+// Course : traverser le circuit avant les autres, à coups de pichenettes. On peut bousculer
+// les autres dans les trous. Une chute renvoie au dernier point de contrôle.
 export class RaceMinigame {
   static id = 'race';
   static name = 'Course sur le tapis';
-  static description = 'Atteignez l\'arrivée ! Le pistolet repousse sans blesser. Les ressorts font sauter les trous.';
+  static description = 'Atteignez l\'arrivée à coups de pichenettes ! Bousculez les autres dans les trous, les ressorts font sauter par-dessus.';
   static durationSeconds = 75;
 
   initialize(ctx) {
@@ -17,7 +17,7 @@ export class RaceMinigame {
     this.firstFinishAt = null;
     this.world = ctx.createWorld({
       map: this.map,
-      rules: { damage: false, weapons: 'pistol', items: false, respawnDelay: 1, respawnInvuln: 0.6, knockbackScale: 1.6 },
+      rules: { items: false, respawnDelay: 1, respawnInvuln: 0.6, knockbackScale: 1.3 },
       hooks: { spawnPoint: (p) => this.spawnPoint(p) },
     });
     for (const p of ctx.players) this.state.set(p.id, { cp: 0, finishedAt: null });

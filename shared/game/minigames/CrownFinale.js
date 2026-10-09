@@ -2,12 +2,12 @@ import { ARENA } from '../../maps.js';
 import { PLAYER } from '../../constants.js';
 import { groupRanking } from './MinigameRegistry.js';
 
-// Finale : la couronne. Tout l'arsenal acheté est utilisable. Garder la couronne
-// rapporte du temps de possession ; être éliminé la fait tomber.
+// Finale : la couronne. Tous les gadgets achetés sont utilisables. Garder la couronne
+// rapporte du temps de possession ; un « Carton ! » sur le porteur la lui vole, tomber la fait lâcher.
 export class CrownFinale {
   static id = 'crown';
   static name = 'FINALE — La couronne';
-  static description = 'Gardez la couronne le plus longtemps possible. Tout votre équipement est utilisable. Le porteur est un peu plus lent.';
+  static description = 'Gardez la couronne le plus longtemps possible. Un gros choc sur le porteur la lui vole ! Tous vos gadgets sont utilisables.';
   static durationSeconds = 75;
   static finale = true;
 
@@ -18,8 +18,11 @@ export class CrownFinale {
     this.lockUntil = 0;
     this.world = ctx.createWorld({
       map: ARENA,
-      rules: { damage: true, weapons: 'all', items: true, respawnDelay: 2.5 },
-      hooks: { onEliminated: (victim) => this.onEliminated(victim) },
+      rules: { items: true, respawnDelay: 2 },
+      hooks: {
+        onEliminated: (victim) => this.onEliminated(victim),
+        onSlam: (attacker, victim) => this.steal(attacker, victim),
+      },
     });
     for (const p of ctx.players) this.held.set(p.id, 0);
     this.crown = { id: this.world.nextId++, kind: 'crown', x: ARENA.center.x, y: ARENA.center.y };
@@ -31,6 +34,17 @@ export class CrownFinale {
   onEliminated(victim) {
     if (this.holder !== victim.id) return;
     this.drop(victim);
+  }
+
+  // Carton sur le porteur : la couronne change de tête.
+  steal(attacker, victim) {
+    if (this.holder !== victim.id || attacker.state !== 'alive' || this.world.time < (this.stealLock ?? 0)) return;
+    this.stealLock = this.world.time + 1;
+    victim.speedFactor = 1;
+    this.holder = attacker.id;
+    attacker.speedFactor = 0.9;
+    this.world.emit('crownSteal', { id: attacker.id, victim: victim.id });
+    this.world.emit('crownTake', { id: attacker.id });
   }
 
   drop(p) {

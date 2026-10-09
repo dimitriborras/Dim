@@ -1,4 +1,4 @@
-import { PHASES, MIN_PLAYERS } from '../constants.js';
+import { PHASES, MIN_PLAYERS, REWARDS } from '../constants.js';
 import { ARENA } from '../maps.js';
 import { World, resetBody } from './World.js';
 import { CombatSystem } from './CombatSystem.js';
@@ -10,17 +10,22 @@ import { RaceMinigame } from './minigames/RaceMinigame.js';
 import { CoinRushMinigame } from './minigames/CoinRushMinigame.js';
 import { CrownFinale } from './minigames/CrownFinale.js';
 import { MicroRushMinigame } from './minigames/MicroRushMinigame.js';
+import { PaletMinigame } from './minigames/PaletMinigame.js';
+import { GluttonMinigame } from './minigames/GluttonMinigame.js';
 
 export function defaultRegistry() {
-  return new MinigameRegistry().register(RaceMinigame).register(CoinRushMinigame).register(MicroRushMinigame).register(CrownFinale);
+  return new MinigameRegistry()
+    .register(RaceMinigame).register(CoinRushMinigame).register(PaletMinigame).register(GluttonMinigame)
+    .register(MicroRushMinigame).register(CrownFinale);
 }
 
-const SAFE_RULES = { damage: false, weapons: 'none', items: false, respawn: true, respawnDelay: 1, respawnInvuln: 0.5 };
-const COMBAT_RULES = { damage: true, weapons: 'all', items: true, respawn: true, respawnDelay: 3, respawnInvuln: 1 };
-// Lobby : billard pur (pas de tir), on marque en empochant les autres.
-const PRACTICE_RULES = { damage: false, weapons: 'none', items: false, respawn: true, respawnDelay: 1.2, respawnInvuln: 0.8 };
+const SAFE_RULES = { items: false, respawn: true, respawnDelay: 1, respawnInvuln: 0.5 };
+// La Mêlée : billard sans tir, gadgets autorisés. On marque en empochant les autres.
+const COMBAT_RULES = { items: true, respawn: true, respawnDelay: 2, respawnInvuln: 1 };
+// Lobby : billard libre, on marque en empochant les autres.
+const PRACTICE_RULES = { items: false, respawn: true, respawnDelay: 1.2, respawnInvuln: 0.8 };
 
-// Phases de partie : lobby -> [intro -> mini-jeu -> récompenses/boutique -> combat -> derniers achats] x N
+// Phases de partie : lobby -> [intro -> mini-jeu -> résultats + Distributeur -> Mêlée -> bilan] x N
 //                    -> intro finale -> finale -> classement -> lobby.
 export class MatchManager {
   constructor(room) {
@@ -88,7 +93,7 @@ export class MatchManager {
       p.inv = InventorySystem.create();
       p.championShield = false;
       p.contract = null;
-      p.channel = null;
+      p.offers = [];
     }
     this.minigame = null;
     this.round = 0;
@@ -195,35 +200,40 @@ export class MatchManager {
   // ------------------------------------------------------------ combat
   combatHooks() {
     return {
+      // Empocher un adversaire : points dégressifs sur la même victime, prime du champion.
       onEliminated: (victim, killerId) => {
         if (this.phase !== 'combat') return;
         victim.diedThisCombat = true;
         const killer = killerId ? this.room.players.get(killerId) : null;
         if (killer && killer.inMatch) {
+          const champ = victim.id === this.score.championId;
           this.score.onKill(killer, victim, this.events);
-          ScoreSystem.progressContract(killer, 'eliminate', 1, this.events, this.score);
+          ScoreSystem.progressContract(killer, 'pocket', 1, this.events, this.score);
+          if (champ) ScoreSystem.progressContract(killer, 'bounty', 1, this.events, this.score);
         }
       },
-      // Gros choc en combat : +1 point, au plus toutes les 2 s et 5 fois par combat.
-      onSlam: (attacker, victim) => {
+      // Gros choc : +1 point, au plus toutes les 2 s et 5 fois par Mêlée.
+      onSlam: (attacker) => {
         if (this.phase !== 'combat' || !attacker.inMatch) return;
         if (this.world.time < (attacker.slamReadyAt ?? 0) || (attacker.slamsThisCombat ?? 0) >= 5) return;
         attacker.slamReadyAt = this.world.time + 2;
         attacker.slamsThisCombat = (attacker.slamsThisCombat ?? 0) + 1;
         this.score.addPoints(attacker, 1, 'Carton', this.events);
-        void victim;
+        ScoreSystem.progressContract(attacker, 'slam', 1, this.events, this.score);
       },
-      onDamage: (attacker, victim, dmg) => {
-        if (this.phase !== 'combat') return;
-        attacker.stats.damage += dmg;
-        ScoreSystem.progressContract(attacker, 'damage', dmg, this.events, this.score);
-        if (victim.id === this.score.championId) ScoreSystem.progressContract(attacker, 'bounty', 1, this.events, this.score);
+      // Boule numérotée empochée : +1 point (3 au plus par Mêlée).
+      onBallPocket: (byId) => {
+        const p = this.room.players.get(byId);
+        if (this.phase !== 'combat' || !p?.inMatch || (p.ballsThisCombat ?? 0) >= REWARDS.maxBallPoints) return;
+        p.ballsThisCombat = (p.ballsThisCombat ?? 0) + 1;
+        this.score.addPoints(p, REWARDS.ballPoints, 'Boule empochée', this.events);
+        ScoreSystem.progressContract(p, 'ball', 1, this.events, this.score);
       },
     };
   }
 
   enterRewards() {
-    this.shop.rotate(this.round);
+    this.shop.open(ScoreSystem.ranking(this.participants()));
     this.createWorld({ map: ARENA, rules: SAFE_RULES, hooks: this.combatHooks() });
     for (const p of this.participants()) {
       p.contract = null;
@@ -236,14 +246,15 @@ export class MatchManager {
   enterCombat() {
     const w = this.world;
     Object.assign(w.rules, COMBAT_RULES);
-    w.projectiles = [];
     w.traps = [];
+    this.shop.close(this.participants());
     const spawns = this.rng.shuffle(w.map.spawns);
     this.score.beginCombat();
     const contracts = this.score.assignContracts(this.participants(), this.rng);
     this.participants().forEach((p, i) => {
       p.diedThisCombat = false;
       p.slamsThisCombat = 0;
+      p.ballsThisCombat = 0;
       p.contract = contracts.get(p.id) ?? null;
       p.championShield = p.id === this.score.championId;
       InventorySystem.refresh(p.inv);
@@ -253,8 +264,6 @@ export class MatchManager {
   }
 
   endCombat() {
-    // Fin du chronomètre pendant un achat : la transaction est validée (crédits revérifiés).
-    this.shop.update(this.participants(), this.time, true);
     for (const p of this.participants()) {
       if (p.contract?.kind === 'survive' && !p.diedThisCombat && p.connected) {
         ScoreSystem.progressContract(p, 'survive', 1, this.events, this.score);
@@ -282,9 +291,7 @@ export class MatchManager {
 
   // ------------------------------------------------------------ boucle
   shopMode() {
-    if (this.phase === 'rewards' || this.phase === 'lastShop') return 'safe';
-    if (this.phase === 'combat') return 'combat';
-    return 'closed';
+    return this.phase === 'rewards' ? 'open' : 'closed';
   }
 
   // Geste de mini-jeu (tape, choix, rotation…), validé par le mini-jeu lui-même.
@@ -292,9 +299,14 @@ export class MatchManager {
     if ((this.phase === 'minigame' || this.phase === 'finale') && p.inMatch) this.minigame?.input?.(p, msg);
   }
 
-  buy(p, itemId, slot) {
-    if (!p.inMatch) return { ok: false, reason: 'Boutique disponible pendant la partie' };
-    return this.shop.request(p, itemId, slot, this.shopMode(), this.time);
+  buy(p, itemId) {
+    if (!p.inMatch) return { ok: false, reason: 'Distributeur disponible pendant la partie' };
+    return this.shop.buy(p, itemId, this.shopMode() === 'open');
+  }
+
+  reroll(p) {
+    if (!p.inMatch) return { ok: false, reason: 'Distributeur disponible pendant la partie' };
+    return this.shop.reroll(p, this.shopMode() === 'open');
   }
 
   tick(dt) {
@@ -310,20 +322,16 @@ export class MatchManager {
     for (const p of w.players) {
       if (!p.bot) continue;
       p.bot.think(p, w, mode, extra);
-      if (this.shopMode() === 'safe' && this.rng.next() < 0.03) {
-        const item = p.bot.shop(p, this.shop, this.rng);
-        if (item) this.recordShop(p, this.buy(p, item, this.rng.next() < 0.5 ? 1 : 2), item);
+      if (this.shopMode() === 'open' && this.rng.next() < 0.04) {
+        const choice = p.bot.shop(p, this.rng);
+        if (choice === 'reroll') this.recordShop(p, this.reroll(p), null);
+        else if (choice) this.recordShop(p, this.buy(p, choice), choice);
       }
     }
 
     w.step(dt);
     this.time = w.time;
 
-    if (this.phase === 'combat') {
-      for (const { player, result } of this.shop.update(this.participants(), this.time)) {
-        this.recordShop(player, result, result.itemId);
-      }
-    }
     if (this.phase === 'minigame' || this.phase === 'finale') {
       this.minigame.update(dt);
       const cap = this.minigame.timeLeftCap?.();
@@ -336,7 +344,7 @@ export class MatchManager {
   }
 
   recordShop(p, result, itemId) {
-    if (result?.ok && !result.pending) this.emit('bought', { id: p.id, item: itemId });
+    if (result?.ok && itemId) this.emit('bought', { id: p.id, item: itemId });
     this.room.notifyShop?.(p, result, itemId);
   }
 
@@ -371,7 +379,6 @@ export class MatchManager {
 
   // ------------------------------------------------------------ connexions
   onDisconnect(p) {
-    p.channel = null;
     const i = this.world.players.indexOf(p);
     if (i >= 0) this.world.players.splice(i, 1);
   }
@@ -403,7 +410,6 @@ export class MatchManager {
       results: this.phase === 'rewards' || this.phase === 'final' ? this.lastResults : null,
       standings: this.phase === 'final' ? this.standings : null,
       shop: this.shopMode(),
-      offers: this.shop.offers,
       map: this.world.map.id,
     };
   }

@@ -2,12 +2,12 @@ import { ARENA } from '../../maps.js';
 import { PLAYER } from '../../constants.js';
 import { groupRanking } from './MinigameRegistry.js';
 
-// Ruée sur les jetons : ramasser un maximum de jetons. Un tir fait lâcher un jeton,
-// une chute en fait perdre la moitié.
+// Ruée sur les jetons : ramasser un maximum de jetons sur le billard. Un choc fait lâcher
+// un jeton à la victime (à ramasser !), tomber dans une poche en fait perdre la moitié.
 export class CoinRushMinigame {
   static id = 'coins';
   static name = 'Ruée sur les jetons';
-  static description = 'Ramassez les jetons (dorés = 3). Un tir fait lâcher un jeton à la cible, tomber en fait perdre la moitié.';
+  static description = 'Ramassez les jetons (dorés = 3). Percuter quelqu\'un lui fait lâcher un jeton, tomber dans une poche en fait perdre la moitié.';
   static durationSeconds = 60;
 
   initialize(ctx) {
@@ -17,7 +17,7 @@ export class CoinRushMinigame {
     this.spawnTimer = 0;
     this.world = ctx.createWorld({
       map: ARENA,
-      rules: { damage: false, weapons: 'pistol', items: false, respawnDelay: 1.5, respawnInvuln: 0.8, knockbackScale: 1.3 },
+      rules: { items: false, respawnDelay: 1.5, respawnInvuln: 0.8, knockbackScale: 1.1 },
       hooks: {
         onHit: (attacker, victim) => this.onHit(attacker, victim),
         onEliminated: (victim) => this.onFall(victim),
@@ -40,20 +40,22 @@ export class CoinRushMinigame {
     return null;
   }
 
-  spawnCoin(at, kind) {
+  spawnCoin(at, kind, lockId = null) {
     const pos = at ? this.randomGround(at.x, at.y, 70) : this.randomGround();
     if (!pos) return;
     const k = kind ?? (this.ctx.rng.next() < 0.12 ? 'gold' : 'coin');
-    this.world.pickups.push({ id: this.world.nextId++, kind: k, x: pos.x, y: pos.y, value: k === 'gold' ? 3 : 1 });
+    // Un jeton lâché ne peut pas être repris tout de suite par celui qui l'a perdu.
+    this.world.pickups.push({ id: this.world.nextId++, kind: k, x: pos.x, y: pos.y, value: k === 'gold' ? 3 : 1, lockId, lockUntil: this.world.time + 1 });
   }
 
   onHit(attacker, victim) {
+    if (!attacker || attacker.id === victim.id) return;
     const n = this.coins.get(victim.id) ?? 0;
     const t = this.world.time;
     if (n <= 0 || t - (this.lastDrop.get(victim.id) ?? -9) < 0.3) return;
     this.lastDrop.set(victim.id, t);
     this.coins.set(victim.id, n - 1);
-    this.spawnCoin(victim, 'coin');
+    this.spawnCoin(victim, 'coin', victim.id);
   }
 
   onFall(victim) {
@@ -75,6 +77,7 @@ export class CoinRushMinigame {
       if (pk.dead) continue;
       for (const p of this.world.players) {
         if (p.state !== 'alive' || this.world.time < p.airborneUntil) continue;
+        if (pk.lockId === p.id && this.world.time < pk.lockUntil) continue;
         if (Math.hypot(p.x - pk.x, p.y - pk.y) < PLAYER.radius + 14) {
           pk.dead = true;
           this.coins.set(p.id, (this.coins.get(p.id) ?? 0) + pk.value);

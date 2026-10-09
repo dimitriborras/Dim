@@ -9,7 +9,7 @@ import { createRng } from '../shared/rng.js';
 import { DT } from '../shared/constants.js';
 
 function fig(id, x, y) {
-  const p = { id, actions: [], input: { mx: 0, my: 0, aim: 0, fire: false }, inv: InventorySystem.create(), channel: null, aim: 0 };
+  const p = { id, actions: [], input: { mx: 0, my: 0, aim: 0, fire: false }, inv: InventorySystem.create(), aim: 0 };
   ScoreSystem.initPlayer(p);
   resetBody(p, { x, y });
   return p;
@@ -26,7 +26,7 @@ test('carambolage : la boule pousse la cible dans la poche, le lanceur est créd
     map: { ...TABLE, balls: [{ x: 450, y: 740, num: 8 }] },
     players: [a, b],
     rng: createRng(1),
-    rules: { damage: false, weapons: 'none', respawn: false },
+    rules: { respawn: false },
     hooks: { onEliminated: (victim, killerId) => elims.push({ victim: victim.id, killerId }) },
   });
   const ball = world.balls[0];
@@ -59,13 +59,12 @@ test('les boules se percutent, rebondissent et sont empochées puis reviennent',
   assert.deepEqual({ x: b2.x, y: b2.y }, b2.home);
 });
 
-test('tirer dans une boule la pousse', () => {
+test('le Pétard pousse aussi les boules', () => {
   const a = fig('a', 300, 500);
-  const world = new World({ map: { ...TABLE, balls: [{ x: 500, y: 500, num: 3 }] }, players: [a], rng: createRng(1) });
-  a.aim = 0;
-  world.spawnProjectile(a, { kind: 'pulse', speed: 950, radius: 6, damage: 20, knockback: 170, life: 1 });
+  const world = new World({ map: { ...TABLE, balls: [{ x: 400, y: 500, num: 3 }] }, players: [a], rng: createRng(1) });
+  world.shockwave(a, 175, 640);
   for (let i = 0; i < 10; i++) world.step(DT);
-  assert.ok(world.balls[0].x > 505, 'la boule a bougé');
+  assert.ok(world.balls[0].x > 420, 'la boule a bougé');
   assert.equal(world.balls[0].lastHitBy, 'a');
 });
 

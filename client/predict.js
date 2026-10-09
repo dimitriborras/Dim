@@ -24,7 +24,7 @@ export class Predictor {
 
   // Même ordre que World.stepPlayer : recharge, geste, glissade, rebonds.
   step(b, cmd) {
-    b.energy = Math.min(PLAYER.energyMax, b.energy + PLAYER.energyRegen * DT);
+    b.energy = Math.min(this.em ?? PLAYER.energyMax, b.energy + (this.er ?? PLAYER.energyRegen) * DT);
     const f = cmd.fl;
     if (f) {
       if (f.hop && b.energy >= PLAYER.hopCost) {
@@ -69,6 +69,8 @@ export class Predictor {
       return;
     }
     this.sf = body.sf;
+    this.em = body.em;
+    this.er = body.er;
     this.slowed = body.slowed;
     const sim = { x: body.x, y: body.y, vx: body.vx, vy: body.vy, energy: body.energy, fling: body.fling };
     for (const c of this.pending) this.step(sim, c);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MICROS, MICRO_BY_ID } from '../shared/game/minigames/micros.js';
+import { MICROS, MICRO_BY_ID, GHOST_ID } from '../shared/game/minigames/micros.js';
 import { GameRoom } from '../shared/game/GameRoom.js';
 import { createRng } from '../shared/rng.js';
 import { DT } from '../shared/constants.js';
@@ -68,7 +68,7 @@ function play(id, inst, p, start) {
 }
 
 test('chaque micro-jeu simple se gagne avec le bon geste et se perd sans', () => {
-  for (const def of MICROS.filter((m) => !m.physics)) {
+  for (const def of MICROS.filter((m) => !m.physics && !m.duel && !m.breath)) {
     for (const speed of [1, 1.66]) {
       const inst = def.create({ rng: createRng(7), speed, start: 100 });
       const good = P('a');
@@ -206,4 +206,69 @@ test('mini-golf : le trou fait gagner, les bots savent viser', () => {
     assert.equal(mg.results[human.id], false, 'sans jouer, pas de trou');
   }
   assert.ok(holed >= total * 0.25, `les bots rentrent souvent la balle (${holed}/${total})`);
+});
+
+test('duels : le meilleur des deux gagne, égalité ou inaction = personne', () => {
+  const pairs = new Map([['a', 'b'], ['b', 'a'], ['c', GHOST_ID]]);
+  const A = P('a'); const B = P('b'); const C = P('c');
+  const tug = MICRO_BY_ID.get('tug').create({ rng: createRng(1), speed: 1, start: 0, pairs });
+  for (let i = 0; i < 8; i++) tug.input(A, { k: 'tap' }, 0.1 + i * 0.1);
+  for (let i = 0; i < 3; i++) tug.input(B, { k: 'tap' }, 0.12 + i * 0.1);
+  assert.ok(tug.won(A) && !tug.won(B), 'tir à la corde : le plus rapide gagne');
+  assert.ok(tug.progress(A).rope > 0 && tug.progress(B).rope < 0, 'chacun voit la corde de son côté');
+  assert.equal(tug.ghosts.length, 1, 'un fantôme pour le joueur impair');
+  assert.ok(!tug.won(C), 'sans taper, le fantôme gagne (ou personne)');
+
+  const w = MICRO_BY_ID.get('western').create({ rng: createRng(2), speed: 1, start: 0, pairs });
+  const sig = w.data.signalAt;
+  w.input(A, { k: 'tap', at: sig + 0.3 }, sig + 0.3);
+  w.input(B, { k: 'tap', at: sig + 0.2 }, sig + 0.2);
+  assert.ok(w.won(B) && !w.won(A), 'duel : le plus rapide après le signal');
+  const w2 = MICRO_BY_ID.get('western').create({ rng: createRng(2), speed: 1, start: 0, pairs });
+  w2.input(A, { k: 'tap', at: sig - 0.2 }, sig - 0.2);
+  w2.input(B, { k: 'tap', at: sig + 0.6 }, sig + 0.6);
+  assert.ok(w2.won(B) && !w2.won(A), 'faux départ : l\'adversaire gagne');
+
+  const r = MICRO_BY_ID.get('rps').create({ rng: createRng(3), speed: 1, start: 0, pairs });
+  r.input(A, { k: 'choice', v: 1 }, 0.5); // feuille
+  r.input(B, { k: 'choice', v: 0 }, 0.5); // pierre
+  assert.ok(r.won(A) && !r.won(B), 'la feuille bat la pierre');
+  assert.equal(r.progress(A).oppChoice, undefined, 'choix adverse secret pendant le jeu');
+  assert.equal(r.reveal(A).oppChoice, 0, 'révélé au verdict');
+  const tie = MICRO_BY_ID.get('rps').create({ rng: createRng(3), speed: 1, start: 0, pairs });
+  tie.input(A, { k: 'choice', v: 2 }, 0.5);
+  tie.input(B, { k: 'choice', v: 2 }, 0.5);
+  assert.ok(!tie.won(A) && !tie.won(B), 'égalité : personne');
+});
+
+test('La Rafale apparie les joueurs pour les duels (fantôme si impair)', () => {
+  const room = new GameRoom({ code: 'DU', seed: 4 });
+  room.join({ send() {} }, { name: 'H' });
+  for (let i = 0; i < 2; i++) room.addBot();
+  room.match.start(1);
+  const mg = room.match.minigame;
+  assert.ok(mg.sequence.some((id) => MICRO_BY_ID.get(id).duel), 'au moins un duel par rafale');
+  mg.sequence = ['tug'];
+  while (mg.phase !== 'play') room.tick(DT);
+  const pairs = mg.pairs;
+  assert.equal(pairs.size, 3);
+  assert.equal([...pairs.values()].filter((v) => v === GHOST_ID).length, 1);
+  for (const [a, b] of pairs) if (b !== GHOST_ID) assert.equal(pairs.get(b), a, 'paires symétriques');
+  while (mg.phase === 'play') room.tick(DT);
+  const wins = Object.values(mg.results).filter(Boolean).length;
+  assert.ok(wins <= 2, 'au plus un gagnant par duel');
+});
+
+test('souffle : il faut souffler assez longtemps, débit plafonné', () => {
+  const def = MICRO_BY_ID.get('blow');
+  const inst = def.create({ rng: createRng(1), speed: 1, start: 0 });
+  const a = P('a');
+  for (let i = 0; i < 100; i++) inst.input(a, { k: 'blow', v: 1 }, 0.5 + i * 0.001);
+  assert.ok(!inst.won(a), 'une rafale de messages ne suffit pas');
+  const b = P('b');
+  for (let t = 0.1; t < 2.4; t += 0.1) inst.input(b, { k: 'blow', v: 1 }, t);
+  assert.ok(inst.won(b), 'un souffle soutenu de ~2 s éteint tout');
+  const c = P('c');
+  for (let t = 0.1; t < 4; t += 0.1) inst.input(c, { k: 'blow', v: 0.1 }, t);
+  assert.ok(!inst.won(c), 'un filet d\'air ne suffit pas');
 });

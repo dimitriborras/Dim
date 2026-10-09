@@ -1,209 +1,88 @@
-import { ITEMS, getItem, evalStat } from '../items.js';
+import { ITEMS, getItem, MAX_PERKS } from '../items.js';
+import { PLAYER } from '../constants.js';
 
-// Trois emplacements permanents (le n°1 contient toujours le pistolet)
-// et deux emplacements de consommables qui disparaissent à l'utilisation.
-export const PERMANENT_SLOTS = 3;
-export const CONSUMABLE_SLOTS = 2;
-
-function makeState(id) {
-  const state = { id, level: 1, ammo: 0, cooldownUntil: 0, reloadUntil: 0 };
-  const def = ITEMS[id];
-  if (def.ammo) state.ammo = evalStat(def.ammo.max, state);
-  return state;
-}
-
+// Équipement d'une figurine : jusqu'à 3 atouts permanents et un gadget à charges.
 export const InventorySystem = {
   create() {
-    return {
-      slots: [makeState('pistol'), null, null],
-      active: 0,
-      consumables: [null, null],
-    };
+    return { perks: [], gadget: null };
   },
 
-  // Remise à zéro des munitions et recharges au début d'une phase.
+  // Début de phase : charges du gadget et bouées rechargées.
   refresh(inv) {
-    for (const s of inv.slots) {
-      if (!s) continue;
-      const def = ITEMS[s.id];
-      s.cooldownUntil = 0;
-      s.reloadUntil = 0;
-      if (def.ammo) s.ammo = evalStat(def.ammo.max, s);
+    if (inv.gadget) {
+      inv.gadget.charges = ITEMS[inv.gadget.id].charges;
+      inv.gadget.cooldownUntil = 0;
     }
   },
 
   owns(inv, id) {
-    return inv.slots.some((s) => s && s.id === id);
+    return inv.perks.includes(id) || inv.gadget?.id === id;
   },
 
-  // Vérifie qu'un objet peut être ajouté. `slot` (1 ou 2) choisit l'emplacement
-  // permanent à remplacer quand l'inventaire est plein.
-  canAdd(inv, itemId, slot) {
+  canAdd(inv, itemId) {
     const def = getItem(itemId);
-    if (!def || def.starter) return { ok: false, reason: 'Objet inconnu' };
-    if (def.category === 'upgrade') {
-      const target = inv.slots.find((s) => s && s.id === def.upgrades);
-      if (!target) return { ok: false, reason: 'Arme requise absente' };
-      if (target.level >= 2) return { ok: false, reason: 'Déjà amélioré (niveau max)' };
-      return { ok: true };
-    }
-    if (def.category === 'consumable') {
-      const free = inv.consumables.findIndex((c) => c === null);
-      if (free < 0) return { ok: false, reason: 'Emplacements de consommables pleins' };
-      return { ok: true, slot: free };
-    }
+    if (!def) return { ok: false, reason: 'Objet inconnu' };
     if (this.owns(inv, itemId)) return { ok: false, reason: 'Déjà équipé' };
-    const free = inv.slots.findIndex((s, i) => i > 0 && s === null);
-    if (free > 0) return { ok: true, slot: free };
-    if (slot === 1 || slot === 2) return { ok: true, slot, replaces: inv.slots[slot].id };
-    return { ok: false, reason: 'Emplacements pleins : choisissez celui à remplacer' };
+    if (def.category === 'perk' && inv.perks.length >= MAX_PERKS) return { ok: true, replaces: inv.perks[0] };
+    if (def.category === 'gadget' && inv.gadget) return { ok: true, replaces: inv.gadget.id };
+    return { ok: true };
   },
 
-  add(inv, itemId, slot) {
-    const check = this.canAdd(inv, itemId, slot);
+  add(inv, itemId) {
+    const check = this.canAdd(inv, itemId);
     if (!check.ok) return check;
     const def = ITEMS[itemId];
-    if (def.category === 'upgrade') {
-      const target = inv.slots.find((s) => s && s.id === def.upgrades);
-      target.level = 2;
-      target.ammo = evalStat(ITEMS[target.id].ammo.max, target);
-      target.reloadUntil = 0;
-    } else if (def.category === 'consumable') {
-      inv.consumables[check.slot] = { id: itemId };
+    if (def.category === 'perk') {
+      if (inv.perks.length >= MAX_PERKS) inv.perks.shift();
+      inv.perks.push(itemId);
     } else {
-      if (inv.active === check.slot) inv.active = 0;
-      inv.slots[check.slot] = makeState(itemId);
+      inv.gadget = { id: itemId, charges: def.charges, cooldownUntil: 0 };
     }
     return check;
   },
 
-  update(player, time) {
-    for (const s of player.inv.slots) {
-      if (s && s.reloadUntil && time >= s.reloadUntil) {
-        s.reloadUntil = 0;
-        s.ammo = evalStat(ITEMS[s.id].ammo.max, s);
-      }
+  // Caractéristiques de la figurine d'après ses atouts (appliquées à chaque phase).
+  stats(inv) {
+    const s = { mass: 1, energyMax: PLAYER.energyMax, regen: 1, power: 1, punch: 1, saves: 0 };
+    for (const id of inv.perks) {
+      const m = ITEMS[id].mods;
+      if (m.mass) s.mass *= m.mass;
+      if (m.energyMax) s.energyMax += m.energyMax;
+      if (m.regen) s.regen *= m.regen;
+      if (m.power) s.power *= m.power;
+      if (m.punch) s.punch *= m.punch;
+      if (m.saves) s.saves += m.saves;
     }
+    return s;
   },
 
-  // Appui sur 1/2/3 : sélectionne une arme, ou déclenche directement un gadget.
-  pressSlot(player, world, index) {
-    const s = player.inv.slots[index];
-    if (!s) return false;
-    const def = ITEMS[s.id];
-    if (def.category === 'weapon') {
-      if (world.rules.weapons === 'pistol' && s.id !== 'pistol') return false;
-      player.inv.active = index;
-      return true;
-    }
-    return this.useState(player, world, s);
+  applyStats(p) {
+    const s = this.stats(p.inv);
+    p.mass = s.mass;
+    p.energyMax = s.energyMax;
+    p.regenMul = s.regen;
+    p.powerMul = s.power;
+    p.punch = s.punch;
+    p.saves = s.saves;
   },
 
-  isWeaponSlot(inv, index) {
-    const s = inv.slots[index];
-    return !!s && ITEMS[s.id].category === 'weapon';
-  },
-
-  // Molette, gâchettes de manette : arme suivante ou précédente parmi celles autorisées.
-  cycleWeapon(player, world, dir) {
-    const slots = player.inv.slots;
-    for (let k = 1; k <= slots.length; k++) {
-      const i = (player.inv.active + dir * k + slots.length * 3) % slots.length;
-      const s = slots[i];
-      if (!s || ITEMS[s.id].category !== 'weapon') continue;
-      if (world.rules.weapons === 'pistol' && s.id !== 'pistol') continue;
-      player.inv.active = i;
-      return true;
-    }
-    return false;
-  },
-
-  // Tir automatique quand la figurine est posée : l'arme la plus adaptée à la distance.
-  autoFire(player, world, target, d) {
-    if (world.rules.weapons === 'none') return false;
-    const slots = player.inv.slots;
-    const find = (id) => slots.findIndex((s) => s && s.id === id);
-    let idx = 0;
-    if (world.rules.weapons !== 'pistol') {
-      const glove = find('spring_glove');
-      const glue = find('glue_launcher');
-      if (glove > 0 && d < 100) idx = glove;
-      else if (glue > 0 && d > 150 && !(world.time < (target.slowUntil ?? 0)) && slots[glue].ammo > 0 && !slots[glue].reloadUntil) idx = glue;
-    }
-    player.inv.active = idx;
-    return this.useState(player, world, slots[idx]);
-  },
-
-  // Bouton d'objet unique : le gadget s'il est prêt, sinon le premier consommable.
+  // Bouton rond : utilise une charge du gadget.
   useItem(player, world) {
-    const g = player.inv.slots.find((x) => x && ITEMS[x.id].category === 'gadget');
-    if (g && world.time >= g.cooldownUntil && world.rules.items && this.useState(player, world, g)) return true;
-    for (let i = 0; i < player.inv.consumables.length; i++) {
-      if (player.inv.consumables[i] && this.useConsumable(player, world, i)) return true;
-    }
-    return false;
-  },
-
-  fire(player, world) {
-    const s = player.inv.slots[player.inv.active] ?? player.inv.slots[0];
-    return this.useState(player, world, s);
-  },
-
-  // Clic droit / E : premier gadget équipé.
-  useGadget(player, world) {
-    const s = player.inv.slots.find((x) => x && ITEMS[x.id].category === 'gadget');
-    return s ? this.useState(player, world, s) : false;
-  },
-
-  useState(player, world, s) {
-    const def = ITEMS[s.id];
-    if (def.category === 'gadget' && !world.rules.items) return false;
-    if (def.category === 'weapon' && world.rules.weapons === 'pistol' && s.id !== 'pistol') return false;
-    if (world.rules.weapons === 'none') return false;
-    const t = world.time;
-    if (t < s.cooldownUntil || s.reloadUntil) return false;
-    if (def.ammo && s.ammo <= 0) return false;
-    const used = def.use({ world, player, state: s, def });
-    if (!used) return false;
-    s.cooldownUntil = t + evalStat(def.cooldown ?? 0.2, s);
-    if (def.ammo) {
-      s.ammo -= 1;
-      if (s.ammo <= 0) s.reloadUntil = t + def.ammo.reload;
-    }
+    const g = player.inv.gadget;
+    if (!g || !world.rules.items || g.charges <= 0 || world.time < g.cooldownUntil) return false;
+    const def = ITEMS[g.id];
+    if (!def.use({ world, player, state: g, def })) return false; // échec (ex. téléportation impossible) : charge conservée
+    g.charges -= 1;
+    g.cooldownUntil = world.time + def.cooldown;
     return true;
-  },
-
-  // Un consommable n'est retiré qu'après un usage effectif : impossible de l'utiliser deux fois.
-  useConsumable(player, world, index) {
-    if (!world.rules.items) return false;
-    const c = player.inv.consumables[index];
-    if (!c) return false;
-    const def = ITEMS[c.id];
-    player.inv.consumables[index] = null;
-    const used = def.use({ world, player, state: c, def });
-    if (!used) player.inv.consumables[index] = c; // échec (ex. téléportation impossible) : objet conservé
-    return used;
   },
 
   // Vue envoyée au propriétaire.
   view(inv, time) {
+    const g = inv.gadget;
     return {
-      active: inv.active,
-      slots: inv.slots.map((s) => {
-        if (!s) return null;
-        const def = ITEMS[s.id];
-        const cd = evalStat(def.cooldown ?? 0, s);
-        return {
-          id: s.id,
-          level: s.level,
-          ammo: def.ammo ? s.ammo : null,
-          maxAmmo: def.ammo ? evalStat(def.ammo.max, s) : null,
-          reloading: s.reloadUntil ? Math.max(0, s.reloadUntil - time) : 0,
-          cooldown: Math.max(0, s.cooldownUntil - time),
-          cooldownTotal: cd,
-        };
-      }),
-      consumables: inv.consumables.map((c) => (c ? c.id : null)),
+      perks: inv.perks.slice(),
+      gadget: g ? { id: g.id, charges: g.charges, max: ITEMS[g.id].charges, cooldown: Math.max(0, g.cooldownUntil - time) } : null,
     };
   },
 };

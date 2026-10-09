@@ -12,7 +12,6 @@ import { settings } from './settings.js';
 import { TILT } from './input.js';
 
 const WALL_COLORS = ['#ff5a5a', '#3d8bff', '#3ddc84', '#ffd23d', '#c45cff', '#ff8f3d'];
-const WEAPON_COLORS = { pistol: '#ff9f1c', glue_launcher: '#7bdc3d', spring_glove: '#ff4d6d' };
 const WALL_H = 34; // hauteur des briques
 const TABLE_T = 30; // épaisseur du plateau du bureau
 const FALL_TIME = PLAYER.fallTime + 0.15;
@@ -341,6 +340,31 @@ export class Renderer {
         g.fillStyle = gr;
         g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
       }
+      // Cible du Palet : anneaux peints sur la piste.
+      if (map.target) {
+        ground();
+        const t = map.target;
+        const colors = ['#ff4d6d', '#ffffff', '#3d8bff'];
+        for (let i = t.rings.length - 1; i >= 0; i--) {
+          g.fillStyle = colors[i % colors.length];
+          g.globalAlpha = 0.55;
+          g.beginPath(); g.arc(t.x, t.y, t.rings[i], 0, 7); g.fill();
+          g.globalAlpha = 1;
+          g.strokeStyle = 'rgba(0,0,0,0.35)';
+          g.lineWidth = 3;
+          g.stroke();
+        }
+        g.fillStyle = '#2a1a0e';
+        g.beginPath(); g.arc(t.x, t.y, 6, 0, 7); g.fill();
+        // Ligne de lancer.
+        g.strokeStyle = 'rgba(255,255,255,0.35)';
+        g.lineWidth = 4;
+        g.setLineDash([16, 12]);
+        const lane = map.platforms[0];
+        g.beginPath(); g.moveTo(lane.x + 220, lane.y + 10); g.lineTo(lane.x + 220, lane.y + lane.h - 10); g.stroke();
+        g.setLineDash([]);
+        screen();
+      }
       // Lampe de bureau : lumière chaude dans un coin, nuit bleutée ailleurs (intégrée au décor).
       const lamp = P(map.width * 0.12, map.height * 0.05, 120);
       const R = Math.max(c.width, c.height) * 0.9;
@@ -611,25 +635,10 @@ export class Renderer {
     const now = performance.now() / 1000;
     const push = (fx) => { if (this.effects.length < 160) this.effects.push({ born: now, ...fx }); };
     switch (ev.type) {
-      case 'impact': push({ kind: 'spark', x: ev.x, y: ev.y, life: 0.25, color: ev.kind === 'glue' ? '#7bdc3d' : '#7df9ff' }); break;
-      case 'dmg':
-        push({ kind: 'text', x: ev.x, y: ev.y, text: `-${ev.amount}`, color: ev.by === youId ? '#ffffff' : '#ff5a5a', life: 0.8, size: ev.by === youId ? 20 : 16 });
-        this.flash.set(ev.id, now + 0.09);
-        this.kick(ev.id, ev.ax !== null ? Math.sign(ev.x - ev.ax) || 1 : 1, 7);
-        if (ev.id === youId) {
-          if (ev.ax !== null) this.dmgDirs.push({ wa: Math.atan2(ev.ay - ev.y, ev.ax - ev.x), born: now });
-          this.shake = Math.max(this.shake, 5);
-        }
-        if (ev.by === youId) this.hitMarkers.push({ x: ev.x, y: ev.y, born: now, kill: false });
-        break;
       case 'push':
         this.flash.set(ev.id, now + 0.06);
         this.kick(ev.id, 1, 5);
         if (ev.by === youId) this.hitMarkers.push({ x: ev.x, y: ev.y, born: now, kill: false, soft: true });
-        break;
-      case 'shot':
-        this.recoil.set(ev.id, now);
-        push({ kind: 'muzzle', id: ev.id, life: 0.07, color: ev.kind === 'glue' ? '#b6ff7a' : '#fff3b0' });
         break;
       case 'flick':
         push({ kind: 'dust', id: ev.id, life: 0.4 });
@@ -657,9 +666,20 @@ export class Renderer {
         if (ev.by === youId) this.hitStopUntil = now + 0.07;
         break;
       case 'boom':
-        push({ kind: 'ring', x: ev.x, y: ev.y, r: ev.r, life: 0.45, color: '#ff6fb5' });
-        for (let i = 0; i < 20; i++) push({ kind: 'confetti', x: ev.x, y: ev.y, a: Math.random() * 6.28, s: 120 + Math.random() * 260, life: 0.9, color: WALL_COLORS[i % WALL_COLORS.length] });
-        this.shake = 8;
+        push({ kind: 'ring', x: ev.x, y: ev.y, r: ev.r, life: 0.45, color: ev.small ? '#ffd23d' : '#ff6fb5' });
+        for (let i = 0; i < (ev.small ? 10 : 20); i++) push({ kind: 'confetti', x: ev.x, y: ev.y, a: Math.random() * 6.28, s: 120 + Math.random() * 260, life: 0.9, color: WALL_COLORS[i % WALL_COLORS.length] });
+        this.shake = Math.max(this.shake, ev.small ? 5 : 8);
+        break;
+      case 'magnet':
+        push({ kind: 'ring', x: ev.x, y: ev.y, r: ev.r, life: 0.4, color: '#c45cff' });
+        push({ kind: 'ring', x: ev.x, y: ev.y, r: ev.r * 0.5, life: 0.3, color: '#c45cff' });
+        break;
+      case 'saved':
+        push({ kind: 'text', x: ev.x, y: ev.y, text: '🛟 Sauvé !', color: '#7df9ff', life: 1, size: 18 });
+        push({ kind: 'ring', x: ev.x, y: ev.y, r: 40, life: 0.4, color: '#7df9ff' });
+        break;
+      case 'crownSteal':
+        if (ev.id === youId) this.hitStopUntil = now + 0.08;
         break;
       case 'punch': push({ kind: 'punch', id: ev.id, aim: ev.aim, life: 0.16 }); break;
       case 'teleport':
@@ -796,10 +816,22 @@ export class Renderer {
       ctx.arc(x, y, PLAYER.radius * (air ? 0.75 : 1), 0, 7);
     }
     for (const d of state.decoys) { ctx.moveTo(d.x + PLAYER.radius, d.y); ctx.arc(d.x, d.y, PLAYER.radius, 0, 7); }
-    for (const pr of state.proj) { ctx.moveTo(pr.x + pr.r, pr.y); ctx.arc(pr.x, pr.y, pr.r, 0, 7); }
     for (const pk of state.pickups) { const r = pk.kind === 'crown' ? 20 : 11; ctx.moveTo(pk.x + r, pk.y); ctx.arc(pk.x, pk.y, r, 0, 7); }
     for (const b of state.balls ?? []) { ctx.moveTo(b.x + 21, b.y + 4); ctx.arc(b.x, b.y + 4, 21, 0, 7); }
     ctx.fill();
+    if (state.pocketScale > 1.01 && this.currentMap?.pockets) {
+      // Poches gloutonnes : le trou s'élargit par-dessus le décor.
+      for (const pk of this.currentMap.pockets) {
+        const r = pk.r * state.pocketScale;
+        ctx.fillStyle = '#3a2412';
+        ctx.beginPath(); ctx.arc(pk.x, pk.y, r + 8, 0, 7); ctx.fill();
+        ctx.fillStyle = '#050307';
+        ctx.beginPath(); ctx.arc(pk.x, pk.y, r, 0, 7); ctx.fill();
+        ctx.strokeStyle = `rgba(255, 77, 109, ${0.35 + 0.25 * Math.sin(now * 6)})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(pk.x, pk.y, r + 10, 0, 7); ctx.stroke();
+      }
+    }
     if (state.microTarget) {
       // Cible du micro-jeu « Dans le cercle ! ».
       const t = state.microTarget;
@@ -822,15 +854,18 @@ export class Renderer {
     const me = state.players.find((p) => p.id === state.youId);
     if (!me || me.s !== 'alive') return;
     if (state.trajectory) this.drawTrajectory(me, state);
+    this.energyMax = state.energyMax;
     this.drawEnergy(me, state.energy ?? 0);
   }
 
   // Charges de pichenette : trois pastilles sous la figurine.
   drawEnergy(me, energy) {
     const { ctx } = this;
-    for (let i = 0; i < PLAYER.energyMax; i++) {
+    const n = this.energyMax ?? PLAYER.energyMax;
+    for (let i = 0; i < n; i++) {
       const q = this.V(me.x, me.y);
-      const wq = this.rot ? { x: q.v + 30, y: q.u + (i - 1) * 16 } : { x: q.u + (i - 1) * 16, y: q.v + 30 };
+      const off = (i - (n - 1) / 2) * 16;
+      const wq = this.rot ? { x: q.v + 30, y: q.u + off } : { x: q.u + off, y: q.v + 30 };
       const x = wq.x;
       const y = wq.y;
       const fill = clamp(energy - i, 0, 1);
@@ -900,7 +935,6 @@ export class Renderer {
     for (const d of state.decoys) items.push({ key: depth(d), kind: 4, d });
     for (const p of state.players) if (p.s !== 'dead') items.push({ key: depth(p) + (p.s === 'falling' ? 2000 : 0), kind: 5, p });
     for (const b of state.bombs) items.push({ key: depth(b), kind: 6, b });
-    for (const pr of state.proj) items.push({ key: depth(pr), kind: 7, pr });
     for (const b of state.balls ?? []) items.push({ key: depth(b), kind: 8, b });
     items.sort((a, b) => a.key - b.key);
     const s = this.cam.scale;
@@ -929,7 +963,7 @@ export class Renderer {
         case 3: this.drawPickup(it.pk, now, s); break;
         case 4: {
           const owner = state.roster.get(it.d.owner);
-          if (owner) this.drawFigure({ id: `decoy${it.d.owner}`, x: it.d.x, y: it.d.y, a: it.d.a, s: 'alive', f: '', w: 'pistol', hp: 100 }, owner, now, { decoy: it.d.owner === state.youId });
+          if (owner) this.drawFigure({ id: `decoy${it.d.owner}`, x: it.d.x, y: it.d.y, a: it.d.a, s: 'alive', f: '' }, owner, now, { decoy: it.d.owner === state.youId });
           break;
         }
         case 5: {
@@ -938,7 +972,6 @@ export class Renderer {
           break;
         }
         case 6: this.drawBomb(it.b, now, s); break;
-        case 7: this.drawProjectile(it.pr, s); break;
         case 8: {
           // Boule qui roule : le numéro tourne avec le déplacement.
           const sp = this.bumperSprite(19, it.b.num);
@@ -958,11 +991,11 @@ export class Renderer {
     for (const p of state.players) {
       const info = state.roster.get(p.id);
       if (!info || p.s !== 'alive') continue;
-      this.drawLabel(p, info, { me: p.id === state.youId, champion: p.id === state.champion, crown: p.id === state.crownHolder, showHp: state.showHp, channel: p.id === state.youId ? state.channel : null });
+      this.drawLabel(p, info, { me: p.id === state.youId, champion: p.id === state.champion, crown: p.id === state.crownHolder });
     }
     for (const d of state.decoys) {
       const owner = state.roster.get(d.owner);
-      if (owner) this.drawLabel({ x: d.x, y: d.y, hp: 100, s: 'alive', f: '' }, owner, { decoy: d.owner === state.youId });
+      if (owner) this.drawLabel({ x: d.x, y: d.y, s: 'alive', f: '' }, owner, { decoy: d.owner === state.youId });
     }
   }
 
@@ -997,23 +1030,6 @@ export class Renderer {
     ctx.rotate(a.lean);
     ctx.scale(scale * (1 - stretch), scale * (1 + stretch));
     const facingAway = (this.rot ? Math.cos(p.a) : Math.sin(p.a)) < -0.25;
-    const gun = () => {
-      ctx.save();
-      ctx.scale(s, s);
-      ctx.translate(0, -16);
-      ctx.rotate(sa);
-      const punching = this.effects.some((e) => e.kind === 'punch' && e.id === p.id);
-      const gc = WEAPON_COLORS[p.w] ?? '#ff9f1c';
-      ctx.fillStyle = gc;
-      if (p.w === 'spring_glove') {
-        ctx.fillRect(6, -3, punching ? 44 : 16, 6);
-        ctx.beginPath(); ctx.arc(punching ? 54 : 26, 0, 9, 0, 7); ctx.fill();
-      } else {
-        ctx.fillRect(8, -5, 22, 10);
-      }
-      ctx.restore();
-    };
-    if (facingAway) gun();
     const white = now < (this.flash.get(p.id) ?? 0);
     const spr = this.figSprite(info.color, white);
     ctx.drawImage(spr, -FIG.ax * s, -FIG.ay * s, FIG.w * s, FIG.h * s);
@@ -1026,9 +1042,15 @@ export class Renderer {
       ctx.beginPath(); ctx.arc(-3.6 + ex, -35 + ey, 1.9, 0, 7); ctx.arc(3.6 + ex, -35 + ey, 1.9, 0, 7); ctx.fill();
       ctx.restore();
     }
-    if (!facingAway) gun();
     ctx.restore();
 
+    if (f.includes('h')) {
+      // Lest de plomb : socle sombre et épais.
+      const foot = this.toScreen(p.x, p.y, z + 2);
+      ctx.strokeStyle = 'rgba(60, 64, 80, 0.9)';
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.ellipse(foot.x, foot.y, 22 * s, 22 * s * TILT, 0, 0, 7); ctx.stroke();
+    }
     if (f.includes('b') || f.includes('c') || f.includes('g')) {
       const mid = this.toScreen(p.x, p.y, z + 20);
       ctx.lineWidth = 3;
@@ -1054,48 +1076,14 @@ export class Renderer {
     const air = (p.f || '').includes('j');
     const top = this.toScreen(p.x, p.y, 58 + (air ? 26 : 0));
     let y = top.y;
-    if (opts.showHp) {
-      const w = 40;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(top.x - w / 2, y - 6, w, 6);
-      ctx.fillStyle = p.hp > 50 ? '#3ddc84' : p.hp > 25 ? '#ffd23d' : '#ff5a5a';
-      ctx.fillRect(top.x - w / 2, y - 6, (w * p.hp) / 100, 6);
-      y -= 8;
-    }
     const lab = this.labelSprite((opts.decoy ? '(leurre) ' : '') + info.name, opts.me ? '#ffd23d' : '#ffffff');
     this.blit(lab, top.x - lab.cssW / 2, y - lab.cssH, lab.cssW, lab.cssH);
     y -= lab.cssH;
-    const badges = `${opts.crown ? '👑' : ''}${opts.champion ? '🎯 PRIME' : ''}${(p.f || '').includes('p') ? '🛒' : ''}`;
+    const badges = `${opts.crown ? '👑' : ''}${opts.champion ? '🎯 PRIME' : ''}`;
     if (badges) {
       const b = this.labelSprite(badges, '#ffd23d');
       this.blit(b, top.x - b.cssW / 2, y - b.cssH, b.cssW, b.cssH);
     }
-    if (opts.channel) {
-      const c = this.toScreen(p.x, p.y, 20);
-      ctx.strokeStyle = '#ffd23d';
-      ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(c.x, c.y, 32 * s, -Math.PI / 2, -Math.PI / 2 + opts.channel.progress * Math.PI * 2); ctx.stroke();
-    }
-  }
-
-  drawProjectile(pr, s) {
-    const { ctx } = this;
-    const c = this.toScreen(pr.x, pr.y, 18);
-    const r = pr.r * s;
-    if (pr.kind === 'glue') {
-      ctx.fillStyle = '#7bdc3d';
-      ctx.beginPath(); ctx.arc(c.x, c.y, r + 2 * s, 0, 7); ctx.fill();
-      return;
-    }
-    if (pr.px !== undefined) {
-      const t = this.toScreen(pr.px, pr.py, 18);
-      ctx.strokeStyle = 'rgba(125, 249, 255, 0.55)';
-      ctx.lineWidth = r * 1.6;
-      ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(c.x, c.y); ctx.stroke();
-    }
-    ctx.fillStyle = '#e8feff';
-    ctx.beginPath(); ctx.arc(c.x, c.y, r + 1.5 * s, 0, 7); ctx.fill();
   }
 
   drawBomb(b, now, s) {
@@ -1229,12 +1217,6 @@ export class Renderer {
   // ------------------------------------------------------------ couche d'interface (écran)
   drawOverlay(now, state, me) {
     const { ctx, W, H } = this;
-    if (me && me.s === 'alive' && state.showHp && me.hp <= 35) {
-      const beat = 0.35 + 0.25 * Math.sin(now * (me.hp <= 20 ? 12 : 7));
-      ctx.strokeStyle = `rgba(255,0,40,${beat})`;
-      ctx.lineWidth = Math.min(W, H) * 0.05;
-      ctx.strokeRect(0, 0, W, H);
-    }
     this.dmgDirs = this.dmgDirs.filter((d) => now - d.born < 0.9);
     if (me && this.dmgDirs.length) {
       const c = this.toScreen(me.x, me.y, 20);

@@ -53,11 +53,6 @@ export class Sfx {
   play(ev, youId) {
     const mine = ev.id === youId;
     switch (ev.type) {
-      case 'shot': if (mine) this.tone({ f: ev.kind === 'glue' ? 220 : 660, f2: ev.kind === 'glue' ? 120 : 330, d: 0.07, v: 0.04 }); break;
-      case 'dmg':
-        this.tone({ noise: true, d: 0.08, v: mine ? 0.12 : 0.05 });
-        if (ev.by === youId) this.tone({ f: 1400, f2: 1800, d: 0.05, type: 'square', v: 0.035 }); // confirmation de touche
-        break;
       case 'push': if (ev.by === youId) this.tone({ f: 1200, d: 0.04, type: 'triangle', v: 0.03 }); break;
       case 'elim': this.tone({ f: 300, f2: 60, d: 0.35, type: 'sawtooth', v: 0.07 }); break;
       case 'boom': this.tone({ noise: true, d: 0.4, v: 0.14 }); break;
@@ -90,6 +85,10 @@ export class Sfx {
       case 'teleport': this.tone({ f: 300, f2: 1200, d: 0.18, type: 'sine', v: 0.06 }); break;
       case 'bought': if (mine) this.tone({ f: 880, f2: 1320, d: 0.15, type: 'triangle', v: 0.07 }); break;
       case 'phase': this.tone({ f: 523, f2: 784, d: 0.2, type: 'triangle', v: 0.06 }); break;
+      case 'saved': this.tone({ f: 300, f2: 900, d: 0.25, type: 'sine', v: 0.08 }); break;
+      case 'magnet': this.tone({ f: 900, f2: 200, d: 0.3, type: 'sine', v: 0.06 }); break;
+      case 'crownSteal': this.tone({ f: 660, f2: 1320, d: 0.2, type: 'triangle', v: 0.08 }); break;
+      case 'meneEnd': this.tone({ f: 523, f2: 1046, d: 0.2, type: 'triangle', v: 0.06 }); break;
       case 'shieldBreak': this.tone({ f: 1200, f2: 300, d: 0.25, type: 'triangle', v: 0.08 }); break;
       default: break;
     }

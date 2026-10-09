@@ -9,50 +9,37 @@ import { DT } from '../shared/constants.js';
 import { parseClientMessage } from '../shared/protocol.js';
 
 function setup() {
-  const p = { id: 'p1', actions: [], input: { mx: 0, my: 0, aim: 0, fire: false }, inv: InventorySystem.create(), channel: null, aim: 0 };
+  const p = { id: 'p1', actions: [], input: { mx: 0, my: 0, aim: 0, fire: false }, inv: InventorySystem.create(), aim: 0 };
   ScoreSystem.initPlayer(p);
   resetBody(p, { x: 400, y: 400 });
-  InventorySystem.add(p.inv, 'spring_glove');
   const world = new World({ map: ARENA, players: [p], rng: createRng(1), rules: { respawnDelay: 1 } });
   return { p, world };
 }
 
-test('molette / gâchettes : arme suivante et précédente', () => {
+test('seule l\'action « objet » existe ; pressée pendant la mort, elle ne part pas à la réapparition', () => {
   const { p, world } = setup();
-  p.actions.push('wn');
-  world.step(DT);
-  assert.equal(p.inv.active, 1);
-  p.actions.push('wp');
-  world.step(DT);
-  assert.equal(p.inv.active, 0);
-  assert.deepEqual(parseClientMessage({ t: 'in', act: ['wn', 'wp', 'x'] }).act, ['wn', 'wp']);
-});
-
-test('changer d\'arme reste possible pendant une glissade, pas la pichenette', () => {
-  const { p, world } = setup();
-  p.slipUntil = world.time + 1;
-  p.actions.push('wn');
-  p.pendingFlick = { a: 0, p: 1 };
-  world.step(DT);
-  assert.equal(p.inv.active, 1);
-  assert.ok(Math.abs(p.vx) < 1, 'pichenette refusée pendant la glissade');
-});
-
-test('les actions pressées pendant la mort ne partent pas à la réapparition', () => {
-  const { p, world } = setup();
+  assert.deepEqual(parseClientMessage({ t: 'in', act: ['wn', 'item', 'x'] }).act, ['item']);
   InventorySystem.add(p.inv, 'banana');
   p.state = 'dead';
   p.respawnAt = world.time + 0.5;
-  p.actions.push('c0', 'item');
+  p.actions.push('item');
   for (let i = 0; i < 30; i++) world.step(DT);
   assert.equal(p.state, 'alive');
-  assert.equal(p.inv.consumables[0]?.id, 'banana', 'banane conservée');
+  assert.equal(p.inv.gadget.charges, 3, 'banane conservée');
   assert.equal(world.traps.length, 0);
+});
+
+test('pichenette refusée pendant une glissade de banane', () => {
+  const { p, world } = setup();
+  p.slipUntil = world.time + 1;
+  p.pendingFlick = { a: 0, p: 1 };
+  world.step(DT);
+  assert.ok(Math.abs(p.vx) < 1);
 });
 
 function duel() {
   const mk = (id, x) => {
-    const p = { id, actions: [], input: { mx: 0, my: 0, aim: 0, fire: false }, inv: InventorySystem.create(), channel: null, aim: 0 };
+    const p = { id, actions: [], input: { mx: 0, my: 0, aim: 0, fire: false }, inv: InventorySystem.create(), aim: 0 };
     ScoreSystem.initPlayer(p);
     resetBody(p, { x, y: 640 });
     return p;
@@ -112,10 +99,41 @@ test('figurine renversée : pichenette impossible, puis elle se relève', () => 
   assert.ok(a.vx < -800, 'pichenette possible une fois relevée');
 });
 
-test('posée, la figurine tire seule sur l\'adversaire le plus proche', () => {
+test('Lest de plomb : plus dur à pousser, et pousse plus loin', () => {
+  const push = (heavyA, heavyB) => {
+    const { a, b, world } = duel();
+    if (heavyA) { InventorySystem.add(a.inv, 'lead'); InventorySystem.applyStats(a); }
+    if (heavyB) { InventorySystem.add(b.inv, 'lead'); InventorySystem.applyStats(b); }
+    a.pendingFlick = { a: 0, p: 1 };
+    for (let i = 0; i < 6; i++) world.step(DT);
+    return b.vx;
+  };
+  const base = push(false, false);
+  assert.ok(push(false, true) < base * 0.85, 'cible lestée : moins projetée');
+  assert.ok(push(true, false) > base * 1.05, 'lanceur lesté : projette plus');
+});
+
+test('Pétard : repousse les voisins et crédite le lanceur', () => {
   const { a, b, world } = duel();
+  InventorySystem.add(a.inv, 'firecracker');
+  a.actions.push('item');
   world.step(DT);
-  assert.ok(world.projectiles.some((pr) => pr.owner === 'a'), 'tir automatique');
-  assert.ok(Math.abs(a.aim) < 0.2, 'visée vers la cible');
-  void b;
+  assert.ok(b.vx > 300, `voisin repoussé (vx=${b.vx.toFixed(0)})`);
+  assert.equal(b.lastHitBy, 'a');
+  assert.equal(a.inv.gadget.charges, 1);
+});
+
+test('Bouée : rattrapé une fois au bord d\'une poche', () => {
+  const { a, world } = duel();
+  InventorySystem.add(a.inv, 'buoy');
+  resetBody(a, { x: 300, y: 300 });
+  const pk = ARENA.pockets[0];
+  Object.assign(a, { x: pk.x + 5, y: pk.y + 5, vx: -100, vy: -100 });
+  world.step(DT);
+  assert.equal(a.state, 'alive', 'sauvé');
+  assert.equal(a.saves, 0);
+  assert.ok(world.isGround(a.x, a.y));
+  Object.assign(a, { x: pk.x + 5, y: pk.y + 5 });
+  world.step(DT);
+  assert.notEqual(a.state, 'alive', 'une seule fois');
 });

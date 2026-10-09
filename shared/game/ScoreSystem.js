@@ -77,7 +77,7 @@ export class ScoreSystem {
     return pts;
   }
 
-  // Fin du combat : point de survie et fin du bonus du champion.
+  // Fin de la Mêlée : points de survie et fin du bonus du champion.
   endCombat(players, events) {
     for (const p of players) {
       if (!p.diedThisCombat) this.addPoints(p, REWARDS.survivePoints, 'Survie', events);
@@ -93,7 +93,7 @@ export class ScoreSystem {
     const contracts = new Map();
     sorted.forEach((p, i) => {
       if (i < Math.max(1, sorted.length - half) || p.points >= lead) return;
-      const options = ['damage', 'eliminate', 'survive'];
+      const options = ['pocket', 'slam', 'ball', 'survive'];
       if (this.championId && this.championId !== p.id) options.push('bounty');
       const kind = rng.pick(options);
       contracts.set(p.id, ScoreSystem.makeContract(kind));
@@ -102,15 +102,13 @@ export class ScoreSystem {
   }
 
   static makeContract(kind) {
+    const c = (label, goal, reward = CONTRACT.rewardCredits) => ({ kind, label, goal, progress: 0, reward, done: false });
     switch (kind) {
-      case 'damage':
-        return { kind, label: `Infliger ${CONTRACT.damageTarget} dégâts`, goal: CONTRACT.damageTarget, progress: 0, reward: CONTRACT.rewardCredits, done: false };
-      case 'eliminate':
-        return { kind, label: 'Éliminer un adversaire', goal: 1, progress: 0, reward: CONTRACT.rewardCredits, done: false };
-      case 'bounty':
-        return { kind, label: `Toucher le champion ${CONTRACT.bountyHits} fois`, goal: CONTRACT.bountyHits, progress: 0, reward: CONTRACT.rewardCredits, done: false };
-      default:
-        return { kind: 'survive', label: 'Survivre au combat', goal: 1, progress: 0, reward: CONTRACT.surviveRewardCredits, done: false };
+      case 'pocket': return c('Empocher un adversaire', 1);
+      case 'slam': return c(`Placer ${CONTRACT.slamTarget} cartons`, CONTRACT.slamTarget);
+      case 'ball': return c('Empocher une boule', 1);
+      case 'bounty': return c('Empocher le champion', 1);
+      default: return { ...c('Ne jamais tomber', 1, CONTRACT.surviveRewardCredits), kind: 'survive' };
     }
   }
 

@@ -31,6 +31,7 @@ export class BotBrain {
     if (mode === 'race') goal = this.raceGoal(p, world);
     else if (mode === 'coins') goal = this.coinGoal(p, world);
     else if (mode === 'micro') goal = this.microGoal(p, world, extra.micro);
+    else if (mode === 'palet') goal = this.paletGoal(p, world, extra.micro);
     else if (mode === 'safe') goal = this.rng.next() < 0.12 ? this.wanderGoal(p, world) : null;
     else if (mode === 'lobby') goal = this.rng.next() < 0.5 ? this.poolShot(p, world) ?? this.wanderGoal(p, world) : null;
     else goal = this.fightGoal(p, world, extra);
@@ -42,6 +43,8 @@ export class BotBrain {
   launch(p, world, goal) {
     const d = dist(p, goal);
     const base = Math.atan2(goal.y - p.y, goal.x - p.x);
+    // Coup déjà calculé (Le Palet) : on le joue tel quel.
+    if (goal.flick) { p.pendingFlick = goal.flick; return; }
     // Tomber est le but (le trou du mini-golf) : pas de vérification de sécurité.
     if (goal.free) {
       p.pendingFlick = { a: base, p: Math.max(0.05, goal.power ?? Math.min(1, powerForDistance(d))) };
@@ -97,6 +100,26 @@ export class BotBrain {
     const target = this.nearestEnemy(p, world, 300);
     if (target && this.rng.next() < 0.6) return { x: target.x, y: target.y, push: true };
     return dc > 120 ? { x: c.x, y: c.y } : null;
+  }
+
+  // Le Palet : simule plusieurs dosages et garde celui qui finit le plus près du cœur.
+  // Si un adversaire occupe déjà le cœur, on tente parfois de le dégommer.
+  paletGoal(p, world, hint) {
+    if (!hint) return null;
+    const c = hint.center;
+    const rival = world.players.find((o) => o !== p && o.state === 'alive' && Math.hypot(o.x - c.x, o.y - c.y) < hint.rings[1]);
+    const aim = rival && this.rng.next() < 0.5 ? rival : c;
+    const base = Math.atan2(aim.y - p.y, aim.x - p.x);
+    let best = null;
+    for (let pw = 0.25; pw <= 1.001; pw += 0.05) {
+      const sim = simulateFlick(p, base, pw, world.map, { factor: (p.speedFactor ?? 1) * (p.powerMul ?? 1), isGround: (x, y) => world.isGround(x, y) });
+      if (sim.outcome === 'fall') continue;
+      const d = Math.hypot(sim.end.x - c.x, sim.end.y - c.y);
+      if (!best || d < best.d) best = { d, pw };
+    }
+    if (!best) return null;
+    const err = (1 - this.skill) * 0.1;
+    return { x: aim.x, y: aim.y, flick: { a: base + this.rng.range(-err, err) * 0.4, p: Math.max(0.05, Math.min(1, best.pw + this.rng.range(-err, err))) } };
   }
 
   raceGoal(p, world) {
@@ -196,31 +219,43 @@ export class BotBrain {
     const beyond = { x: target.x + ((target.x - p.x) / d) * 120, y: target.y + ((target.y - p.y) / d) * 120 };
     const pushable = world.inHazard(target.x, target.y) || !world.isGround(beyond.x, beyond.y);
     if (d < 420 && (pushable || this.rng.next() < 0.25 * this.skill)) return { x: target.x, y: target.y, push: true };
-    // Déjà à bonne distance de tir : on reste posé pour tirer.
-    if (d > 260 && d < 520 && world.lineOfSight(p, target)) return null;
     const ang = Math.atan2(p.y - target.y, p.x - target.x) + this.side * this.rng.range(0.3, 0.9);
     return { x: target.x + Math.cos(ang) * 320, y: target.y + Math.sin(ang) * 320 };
   }
 
+  // Gadget du bouton rond, utilisé quand la situation s'y prête.
   useItems(p, world) {
+    const g = p.inv.gadget;
+    if (!g || g.charges <= 0 || world.time < g.cooldownUntil || !world.rules.items) return;
     const r = this.rng.next();
-    const incoming = world.projectiles.some((pr) => {
-      if (pr.owner === p.id) return false;
-      if (Math.hypot(pr.x - p.x, pr.y - p.y) > 160) return false;
-      return (p.x - pr.x) * pr.vx + (p.y - pr.y) * pr.vy > 0;
-    });
-    const gadget = p.inv.slots.find((s) => s && ITEMS[s.id].category === 'gadget');
-    if (incoming && gadget?.id === 'bubble_shield' && r < 0.3) p.actions.push('item');
-    else if (gadget?.id === 'pocket_spring' && p.hp < 40 && r < 0.01) p.actions.push('item');
-    else if (!gadget && p.inv.consumables.some(Boolean) && r < 0.006 * this.skill) p.actions.push('item');
+    const near = (R) => world.players.filter((o) => o !== p && o.state === 'alive' && dist(p, o) < R);
+    const nearPocket = (o) => (world.map.pockets ?? []).some((pk) => Math.hypot(o.x - pk.x, o.y - pk.y) < pk.r + 110);
+    const charging = world.players.some((o) => o !== p && world.time < o.flingUntil && dist(p, o) < 170
+      && (p.x - o.x) * o.vx + (p.y - o.y) * o.vy > 0);
+    let use = false;
+    switch (g.id) {
+      case 'firecracker': use = near(170).some(nearPocket) || (near(170).length >= 2 && r < 0.3); break;
+      case 'anchor': use = charging && r < 0.6; break;
+      case 'magnet': use = !nearPocket(p) && near(300).length > 0 && near(90).length === 0 && r < 0.02; break;
+      case 'spring': use = nearPocket(p) && Math.hypot(p.vx, p.vy) > 250 && r < 0.3; break;
+      case 'banana': use = r < 0.004 * this.skill; break;
+      case 'confetti': use = near(320).length >= 1 && r < 0.015; break;
+      case 'teleporter': use = nearPocket(p) && Math.hypot(p.vx, p.vy) > 300 && r < 0.3; break;
+      default: break;
+    }
+    if (use) p.actions.push('item');
   }
 
-  // Achat pendant une phase sûre : un objet abordable au hasard, en privilégiant l'équipement permanent.
-  shop(p, shop, rng) {
-    const offers = shop.offers.filter((id) => shop.check(p, id).ok);
-    if (!offers.length) return null;
-    const permanent = offers.filter((id) => ITEMS[id].category !== 'consumable');
-    const pool = permanent.length && rng.next() < 0.7 ? permanent : offers;
+  // Distributeur : la capsule la plus intéressante qu'il peut payer, parfois une relance.
+  shop(p, rng) {
+    const offers = (p.offers ?? []).filter((id) => ITEMS[id].price <= p.credits);
+    if (!offers.length) {
+      if (p.freeRerolls > 0 || (p.credits >= 75 && rng.next() < 0.3)) return 'reroll';
+      return null;
+    }
+    // Un gadget d'abord s'il n'en a pas, sinon des atouts.
+    const wanted = offers.filter((id) => (p.inv.gadget ? ITEMS[id].category === 'perk' : ITEMS[id].category === 'gadget'));
+    const pool = wanted.length ? wanted : offers;
     return pool[Math.floor(rng.next() * pool.length)];
   }
 }

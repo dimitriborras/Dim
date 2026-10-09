@@ -56,15 +56,19 @@ On avance par étapes. Chaque étape doit laisser le jeu jouable et être testé
    mis en cache et résolution adaptative. Reste à faire : boutique en 3 cartes, arènes pensées pour le vertical.
 3 bis. **Le billard** *(fait)* : l'arène principale devient une table de billard à six poches ; lobby en billard
    libre avec score d'empochés ; vue pivotée en vertical ; boules mobiles et carambolages ; points pour les gros chocs.
-4. **Micro-jeux à la WarioWare** *(fait : 17 micro-jeux dans « La Rafale »)* : rafales de 10 micro-jeux à un
+4. **Micro-jeux à la WarioWare** *(fait : 21 micro-jeux dans « La Rafale »)* : rafales de 10 micro-jeux à un
    seul geste, chacun lié à une capacité (réflexe, vitesse, lecture, observation, timing, mémoire, calcul,
-   précision, langage, physique de palet). Séquence cohérente : échauffement, montée en niveau, capacités
-   alternées, pauses « palet », boss final (mini-golf). Le match alterne Rafale et mini-jeux de palet.
-   À venir : micro-jeux à deux (duel), à bluff, et au micro du téléphone (souffler).
+   précision, langage, souffle, duel, physique de palet). Séquence cohérente : échauffement, montée en niveau,
+   capacités alternées, duel en face-à-face, pauses « palet », boss final (mini-golf). Duels appariés (fantôme
+   si impair). Souffle dans le micro du téléphone, avec repli au doigt.
+4 bis. **Tout à la pichenette** *(fait)* : plus aucune arme. Le combat devient la Mêlée sur le billard (empocher,
+   cartons, boules) ; la boutique devient le Distributeur (3 capsules personnelles à la ROUNDS : atouts de palet
+   et gadgets) ; nouveaux mini-jeux *Le Palet* (crokinole / curling) et *Les poches gloutonnes* ; jetons volés
+   par les chocs ; couronne volée par un Carton. À venir : micro-jeux à bluff, duels physiques.
 5. **Personnage et humour** : chapeaux et accessoires de figurine, émotes et messages rapides, chutes
    comiques, voix « plastique », récompenses de fin de partie (« Plus grosse chute », « Roi de la banane »).
 6. **Mini-jeux** (objectif 8 et plus, en variant compétition, coopération et bluff) : patate chaude,
-   territoire de peinture, sumo sur plateau qui rétrécit, artillerie au tour par tour à la Worms, braquage
+   territoire de peinture, artillerie au tour par tour à la Worms, braquage
    coopératif à la R.E.P.O. (porter un objet fragile ensemble), manche à imposteur à la Among Us,
    « 1, 2, 3… Humain ! », voitures à friction (la pichenette réutilisée), dominos.
 7. **Arènes vivantes** : décor destructible (Worms, Terraria), événements (la table penche, des jouets tombent),

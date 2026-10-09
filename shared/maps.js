@@ -165,7 +165,37 @@ export const MICRO_GOLF = {
   center: { x: 655, y: 350 },
 };
 
-export const MAPS = { arena: ARENA, race: RACE_TRACK, micro: MICRO_TABLE, golf: MICRO_GOLF };
+// Piste du Palet (inspirée du crokinole et du curling) : on lance depuis la gauche,
+// la cible est à droite, quatre plots protègent le cœur. Les bords donnent sur le vide.
+const LANE = { x: 100, y: 160, w: 1240, h: 380 };
+const TARGET = { x: 1080, y: 350, rings: [45, 95, 150] };
+export const PALET_LANE = {
+  id: 'palet',
+  name: 'La piste du Palet',
+  width: 1440,
+  height: 700,
+  follow: false,
+  platforms: [LANE],
+  holes: [],
+  movingPlatforms: [],
+  walls: [
+    { x: TARGET.x - 132, y: TARGET.y - 12, w: 24, h: 24, style: 'chalk' },
+    { x: TARGET.x + 108, y: TARGET.y - 12, w: 24, h: 24, style: 'chalk' },
+    { x: TARGET.x - 12, y: TARGET.y - 132, w: 24, h: 24, style: 'chalk' },
+    { x: TARGET.x - 12, y: TARGET.y + 108, w: 24, h: 24, style: 'chalk' },
+  ],
+  bumpers: [],
+  springs: [],
+  hazardEdges: true,
+  target: TARGET,
+  spawns: [
+    { x: 190, y: 230 }, { x: 190, y: 290 }, { x: 190, y: 350 }, { x: 190, y: 410 },
+    { x: 190, y: 470 }, { x: 250, y: 260 }, { x: 250, y: 350 }, { x: 250, y: 440 },
+  ],
+  center: { x: TARGET.x, y: TARGET.y },
+};
+
+export const MAPS = { arena: ARENA, race: RACE_TRACK, micro: MICRO_TABLE, golf: MICRO_GOLF, palet: PALET_LANE };
 
 // La poche dans laquelle se trouve ce point, ou null.
 export function pocketAt(map, x, y) {

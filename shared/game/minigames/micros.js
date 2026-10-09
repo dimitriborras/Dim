@@ -28,7 +28,20 @@ export const SKILLS = {
   precision: { label: 'Précision', icon: '🎯' },
   language: { label: 'Langage', icon: '🗣️' },
   physics: { label: 'Physique', icon: '🎱' },
+  duel: { label: 'Duel', icon: '⚔️' },
+  breath: { label: 'Souffle', icon: '🌬️' },
 };
+
+// Duels : chaque joueur affronte un adversaire désigné (`pairs` : id -> id adverse).
+// Avec un nombre impair, le dernier affronte un « fantôme » piloté comme un bot.
+export const GHOST_ID = 'ghost';
+const ghostPlayer = () => ({ id: GHOST_ID, state: 'alive', bot: { skill: 0.55 } });
+const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+function duelSetup(pairs) {
+  const opp = (p) => pairs?.get(p.id) ?? null;
+  const ghosts = pairs && [...pairs.values()].includes(GHOST_ID) ? [ghostPlayer()] : [];
+  return { opp, ghosts, data: Object.fromEntries(pairs ?? []) };
+}
 
 function perPlayer(init) {
   const m = new Map();
@@ -547,5 +560,156 @@ export const MICROS = [
     },
   },
 ];
+
+// ------------------------------------------------------------ souffle
+// Le téléphone écoute le micro (niveau sonore au-dessus du bruit ambiant) ; sans micro,
+// on « souffle » en frottant l'écran. Le serveur ne reçoit qu'une intensité 0..1 et plafonne
+// le débit : impossible d'éteindre les bougies plus vite qu'un vrai souffle.
+MICROS.push({
+  id: 'blow',
+  skill: 'breath',
+  level: 2,
+  breath: true,
+  verb: 'SOUFFLE !',
+  hint: 'Souffle dans le micro pour éteindre les bougies (ou frotte l\'écran).',
+  create({ speed }) {
+    const candles = speed > 1.3 ? 6 : 5;
+    const rate = 2.6; // bougies par seconde à pleine puissance
+    const st = perPlayer(() => ({ breath: 0, last: null }));
+    return {
+      duration: 5.2 / Math.sqrt(speed),
+      data: { candles },
+      input(p, msg, now) {
+        if (msg.k !== 'blow') return;
+        const s = st(p);
+        const dt = s.last === null ? 0.1 : Math.min(0.15, Math.max(0, now - s.last));
+        s.last = now;
+        s.breath = Math.min(candles, s.breath + Math.max(0, Math.min(1, msg.v)) * dt * rate);
+      },
+      bot(p, now, rng, skill) { return rng.next() < 0.7 ? { k: 'blow', v: 0.35 + skill * 0.5 } : null; },
+      progress(p) { return { out: Math.floor(st(p).breath + 1e-9), breath: Math.round(st(p).breath * 100) / 100 }; },
+      won(p) { return st(p).breath >= candles - 1e-9; },
+    };
+  },
+});
+
+// ------------------------------------------------------------ duels
+MICROS.push(
+  {
+    id: 'tug',
+    skill: 'duel',
+    level: 1,
+    duel: true,
+    verb: 'TIRE !',
+    hint: 'Tir à la corde : tape plus vite que ton adversaire !',
+    create({ speed, pairs }) {
+      const { opp, ghosts, data } = duelSetup(pairs);
+      const need = 12; // tapes d'avance pour gagner tout de suite
+      const rope = new Map(); // clé de paire -> position (+ = côté du plus petit id)
+      const last = new Map();
+      const winner = new Map(); // clé de paire -> id du gagnant par K.O.
+      const sign = (p, o) => (p.id < o ? 1 : -1);
+      return {
+        duration: 4.4 / Math.sqrt(speed),
+        data: { pairs: data, need },
+        ghosts,
+        input(p, msg, now) {
+          const o = opp(p);
+          if (msg.k !== 'tap' || !o) return;
+          const k = pairKey(p.id, o);
+          if (winner.has(k) || now - (last.get(p.id) ?? 0) < 0.045) return;
+          last.set(p.id, now);
+          const r = (rope.get(k) ?? 0) + sign(p, o);
+          rope.set(k, r);
+          if (Math.abs(r) >= need) winner.set(k, p.id);
+        },
+        bot(p, now, rng, skill) { return rng.next() < 0.12 + skill * 0.14 ? { k: 'tap' } : null; },
+        progress(p) {
+          const o = opp(p);
+          if (!o) return {};
+          const k = pairKey(p.id, o);
+          return { rope: ((rope.get(k) ?? 0) * sign(p, o)) / need, opp: o, ko: winner.get(k) ?? null };
+        },
+        won(p) {
+          const o = opp(p);
+          if (!o) return false;
+          const k = pairKey(p.id, o);
+          if (winner.has(k)) return winner.get(k) === p.id;
+          return (rope.get(k) ?? 0) * sign(p, o) > 0;
+        },
+      };
+    },
+  },
+  {
+    id: 'western',
+    skill: 'duel',
+    level: 2,
+    duel: true,
+    verb: 'DUEL !',
+    hint: 'Au signal, dégaine avant ton adversaire. Faux départ = perdu.',
+    create({ rng, speed, start, pairs }) {
+      const { opp, ghosts, data } = duelSetup(pairs);
+      const duration = 4.4 / Math.sqrt(speed);
+      const signalAt = start + rng.range(1.2, duration - 1.3);
+      const at = new Map();
+      const shot = (id) => at.get(id) ?? null;
+      const valid = (id) => shot(id) !== null && shot(id) >= signalAt;
+      return {
+        duration,
+        data: { pairs: data, signalAt },
+        ghosts,
+        input(p, msg, now) {
+          if (msg.k !== 'tap' || at.has(p.id) || !opp(p)) return;
+          at.set(p.id, plausible(msg.at, now) ? msg.at : now);
+        },
+        bot(p, now, rng, skill) {
+          if (at.has(p.id)) return null;
+          if (now < signalAt && rng.next() < 0.002) return { k: 'tap', at: now };
+          return now >= signalAt + 0.2 + (1 - skill) * 0.45 && rng.next() < 0.35 ? { k: 'tap', at: now } : null;
+        },
+        progress(p) { const o = opp(p); return { at: shot(p.id), opp: o, oppAt: o ? shot(o) : null }; },
+        won(p) {
+          const o = opp(p);
+          if (!o || !valid(p.id)) return false;
+          return !valid(o) || shot(p.id) < shot(o);
+        },
+      };
+    },
+  },
+  {
+    id: 'rps',
+    skill: 'duel',
+    level: 1,
+    duel: true,
+    verb: 'CHIFOUMI !',
+    hint: 'Pierre, feuille ou ciseaux ? Égalité : personne ne gagne.',
+    create({ speed, pairs }) {
+      const { opp, ghosts, data } = duelSetup(pairs);
+      const pick = new Map();
+      return {
+        duration: 3.6 / Math.sqrt(speed),
+        data: { pairs: data },
+        ghosts,
+        input(p, msg) {
+          if (msg.k !== 'choice' || pick.has(p.id) || !opp(p)) return;
+          const v = Math.round(msg.v);
+          if (v >= 0 && v <= 2) pick.set(p.id, v);
+        },
+        bot(p, now, rng) { return !pick.has(p.id) && rng.next() < 0.05 ? { k: 'choice', v: rng.int(0, 2) } : null; },
+        // Le choix adverse reste secret pendant le jeu.
+        progress(p) { return { choice: pick.get(p.id) ?? null, opp: opp(p) }; },
+        reveal(p) { const o = opp(p); return { choice: pick.get(p.id) ?? null, oppChoice: o ? pick.get(o) ?? null : null }; },
+        won(p) {
+          const o = opp(p);
+          const a = pick.get(p.id);
+          if (!o || a === undefined) return false;
+          const b = pick.get(o);
+          if (b === undefined) return true;
+          return (a - b + 3) % 3 === 1; // 0 pierre, 1 feuille, 2 ciseaux : feuille bat pierre…
+        },
+      };
+    },
+  },
+);
 
 export const MICRO_BY_ID = new Map(MICROS.map((m) => [m.id, m]));

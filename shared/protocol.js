@@ -5,7 +5,7 @@ import { ITEMS } from './items.js';
 import { ROUND_OPTIONS } from './constants.js';
 
 export const MAX_MESSAGE_BYTES = 2048;
-const ACTIONS = new Set(['item', 'gadget', 'c0', 'c1', 's0', 's1', 's2', 'wn', 'wp']);
+const ACTIONS = new Set(['item']);
 
 const num = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null);
 
@@ -42,12 +42,10 @@ export function parseClientMessage(raw) {
         : null;
       return { t: 'in', mx, my, a, f: msg.f === true || msg.f === 1, act, s, fl };
     }
-    case 'buy': {
+    case 'buy':
       if (typeof msg.item !== 'string' || !Object.hasOwn(ITEMS, msg.item)) return null;
-      const slot = msg.slot === 1 || msg.slot === 2 ? msg.slot : undefined;
-      return { t: 'buy', item: msg.item, slot };
-    }
-    case 'cancelBuy':
+      return { t: 'buy', item: msg.item };
+    case 'reroll':
     case 'start':
     case 'addBot':
     case 'removeBot':
@@ -63,7 +61,7 @@ export function parseClientMessage(raw) {
       return { t: 'touch', on: msg.on === true };
     case 'mg': {
       // Geste de micro-jeu : tape, choix (index), rotation (tours), avec l'instant estimé côté client.
-      if (!['tap', 'choice', 'wind'].includes(msg.k)) return null;
+      if (!['tap', 'choice', 'wind', 'blow'].includes(msg.k)) return null;
       const out = { t: 'mg', k: msg.k, v: num(msg.v, -10, 10) ?? 0, at: num(msg.at, 0, 1e9) };
       // Position normalisée (0..1) du doigt, pour les micro-jeux de visée.
       const x = num(msg.x, 0, 1);

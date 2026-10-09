@@ -1,12 +1,12 @@
 import { MICRO_TABLE, MICRO_GOLF } from '../../maps.js';
 import { groupRanking } from './MinigameRegistry.js';
-import { MICROS, MICRO_BY_ID } from './micros.js';
+import { MICROS, MICRO_BY_ID, GHOST_ID } from './micros.js';
 
 const COUNT = 10;
 // Gabarit de la rafale : niveaux autorisés par manche, pauses physiques et boss final.
 const SLOTS = [
   { lo: 1, hi: 1 }, { lo: 1, hi: 1 }, { lo: 1, hi: 2 }, { physics: true },
-  { lo: 2, hi: 2 }, { lo: 2, hi: 2 }, { physics: true },
+  { duel: true }, { lo: 2, hi: 2 }, { physics: true },
   { lo: 2, hi: 3 }, { lo: 3, hi: 3 }, { physics: true, boss: true },
 ];
 const ANNOUNCE = 1.1; // le mot d'ordre s'affiche seul
@@ -36,11 +36,13 @@ export class MicroRushMinigame {
   // Séquence cohérente de 10 micro-jeux :
   //  - échauffement en niveau 1, puis niveau 2, puis les plus durs (niveau 3) en fin de rafale ;
   //  - jamais deux fois de suite la même capacité (réflexe, calcul, mémoire…) ;
+  //  - un face-à-face en duel à la manche 5 ;
   //  - deux pauses « physique de palet » aux manches 4 et 7, et un boss physique en dernier
   //    (plus long, il vaut 2 points) ;
   //  - on évite les micro-jeux déjà joués dans une rafale précédente du même match.
   plan(rng, memory = new Set()) {
-    const simple = MICROS.filter((m) => !m.physics);
+    const simple = MICROS.filter((m) => !m.physics && !m.duel);
+    const duels = MICROS.filter((m) => m.duel);
     const physics = MICROS.filter((m) => m.physics);
     const used = new Set();
     const seq = [];
@@ -55,7 +57,9 @@ export class MicroRushMinigame {
       const slot = SLOTS[i];
       const prev = MICRO_BY_ID.get(seq[seq.length - 1]);
       let m;
-      if (slot.physics) {
+      if (slot.duel) {
+        m = pick(duels, [(x) => !memory.has(x.id)]);
+      } else if (slot.physics) {
         m = pick(physics, [(x) => (slot.boss ? x.level >= 3 : x.level < 3), (x) => !memory.has(x.id)]);
       } else {
         // Par ordre d'importance : on renonce d'abord à la nouveauté, puis à l'alternance, puis au niveau.
@@ -75,11 +79,24 @@ export class MicroRushMinigame {
   makeWorld(map = MICRO_TABLE) {
     const w = this.ctx.createWorld({
       map,
-      rules: { damage: false, weapons: 'none', items: false, respawn: false, knockbackScale: 1 },
+      rules: { items: false, respawn: false, knockbackScale: 1 },
       hooks: {},
     });
     w.rules.frozen = true;
     return w;
+  }
+
+  // Duels : paires tirées au sort parmi les joueurs présents ; l'impair affronte le fantôme.
+  makePairs() {
+    const ids = this.ctx.rng.shuffle(this.ctx.players.filter((p) => p.connected !== false).map((p) => p.id));
+    const pairs = new Map();
+    for (let i = 0; i < ids.length; i += 2) {
+      const a = ids[i];
+      const b = ids[i + 1] ?? GHOST_ID;
+      pairs.set(a, b);
+      if (b !== GHOST_ID) pairs.set(b, a);
+    }
+    return pairs;
   }
 
   isBoss() {
@@ -118,7 +135,8 @@ export class MicroRushMinigame {
     const t = w.time;
     if (this.done) return;
     if (this.phase === 'announce' && t >= this.phaseEnd) {
-      this.inst = this.def.create({ rng: this.ctx.rng, speed: this.speed(), start: t });
+      this.pairs = this.def.duel ? this.makePairs() : null;
+      this.inst = this.def.create({ rng: this.ctx.rng, speed: this.speed(), start: t, pairs: this.pairs });
       if (this.isBoss()) this.inst.duration *= 1.4; // le boss laisse le temps de s'y reprendre
       this.phase = 'play';
       this.phaseEnd = t + this.inst.duration;
@@ -129,6 +147,10 @@ export class MicroRushMinigame {
         if (!p.bot || p.connected === false) continue;
         const msg = this.inst.bot(p, t, this.ctx.rng, p.bot.skill ?? 0.7);
         if (msg) this.inst.input(p, msg, t);
+      }
+      for (const g of this.inst.ghosts ?? []) {
+        const msg = this.inst.bot(g, t, this.ctx.rng, g.bot.skill);
+        if (msg) this.inst.input(g, msg, t);
       }
       if (t >= this.phaseEnd) {
         this.results = {};
@@ -188,7 +210,8 @@ export class MicroRushMinigame {
   privateState(playerId) {
     const p = this.ctx.players.find((x) => x.id === playerId);
     if (!p || !this.inst) return null;
-    return { ...this.inst.progress(p), won: this.results ? this.results[playerId] ?? null : null };
+    const reveal = this.results && this.inst.reveal ? this.inst.reveal(p) : {};
+    return { ...this.inst.progress(p), ...reveal, won: this.results ? this.results[playerId] ?? null : null };
   }
 
   botMode() {

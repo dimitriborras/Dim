@@ -303,6 +303,26 @@ body.micro-phys #micro .m-skill { display: none; }
 .m-target { position: absolute; transform: translate(-50%, -50%); font-size: clamp(40px, 11vw, 60px); pointer-events: none; }
 .m-target.hit { animation: mpop .3s both; filter: drop-shadow(0 0 12px var(--good)); }
 .m-shot { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(0,0,0,.5); pointer-events: none; }
+/* Duels */
+.m-vs { font-weight: 900; font-size: clamp(18px, 5vw, 26px); }
+.m-vs small { color: var(--muted); font-size: .7em; margin: 0 6px; }
+.m-result .m-vs { margin-bottom: 10px; font-size: clamp(26px, 8vw, 44px); }
+.m-rope { position: relative; width: 100%; height: 90px; }
+.m-rope::before { content: ''; position: absolute; left: 6%; right: 6%; top: 50%; height: 8px; margin-top: -4px; border-radius: 4px; background: repeating-linear-gradient(90deg, #c9a46a 0 10px, #a8834c 10px 20px); }
+.m-rope::after { content: ''; position: absolute; left: 50%; top: 10px; bottom: 10px; width: 3px; background: rgba(255,255,255,.4); }
+.m-knot { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 40px; transition: left .08s; }
+.m-rope .me, .m-rope .them { position: absolute; top: 50%; transform: translateY(-50%); font-size: 44px; }
+.m-rope .me { left: 0; } .m-rope .them { right: 0; }
+.m-western { font-size: clamp(34px, 10vw, 60px); }
+.m-cake { position: relative; display: flex; gap: 6px; align-items: flex-end; justify-content: center; padding-bottom: 70px; }
+.m-candle { position: relative; width: 14px; height: 54px; border-radius: 4px; background: repeating-linear-gradient(180deg, #ff9ec7 0 8px, #fff 8px 16px); }
+.m-candle i { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); font-size: 26px; font-style: normal; animation: flame .3s infinite alternate; }
+.m-candle.out i { animation: none; opacity: 0; transition: opacity .2s; }
+.m-candle.out::after { content: '💨'; position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); font-size: 20px; opacity: .7; }
+@keyframes flame { to { transform: translateX(-50%) scale(1.12) rotate(4deg); } }
+.m-cake-base { position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); font-size: 100px; line-height: 1; z-index: -1; }
+.m-meter { width: min(100%, 320px); height: 14px; border-radius: 999px; background: rgba(0,0,0,.4); overflow: hidden; }
+.m-meter i { display: block; height: 100%; background: linear-gradient(90deg, #7fd8ff, #ffffff); transform-origin: left; transform: scaleX(0); }
 @media (prefers-reduced-motion: reduce) { .m-verb.pop, .stamp { animation: none; } }
 body.micro-on #bottom, body.micro-on #feed, body.micro-on #timer, body.micro-on #contract { display: none; }
 #micro[data-phase="result"] .m-stage, #micro[data-phase="announce"] .m-stage { display: none; }
@@ -312,3 +332,27 @@ body.portrait #lobby.collapsed { padding: 8px 10px; bottom: 100px; }
 body.portrait #lobby.collapsed h2 { font-size: 15px; }
 body.portrait #lobby.collapsed .row { margin-top: 4px; gap: 6px; }
 body.portrait #lobby.collapsed .btn { padding: 6px 10px; font-size: 13px; }
+
+/* Le Distributeur : capsules façon machine à jouets. */
+#shopItems .capsules { display: grid; gap: 8px; }
+.capsule { position: relative; display: grid; grid-template-columns: 52px 1fr; grid-template-areas: 'ico title' 'ico tag' 'desc desc' 'tip tip' 'price price'; column-gap: 10px; row-gap: 2px; padding: 10px 12px; border: 2px solid rgba(255,255,255,.12); border-radius: 18px; background: linear-gradient(160deg, #3a3170, #241e4a); color: #fff; text-align: left; cursor: pointer; font: inherit; box-shadow: 0 4px 0 #15112e; animation: capsule .35s cubic-bezier(.2,1.6,.4,1) both; }
+.capsule:nth-child(2) { animation-delay: .06s; } .capsule:nth-child(3) { animation-delay: .12s; }
+@keyframes capsule { from { transform: translateY(-14px) scale(.9); opacity: 0; } }
+.capsule.perk { border-color: rgba(125,249,255,.45); }
+.capsule.gadget { border-color: rgba(255,210,61,.5); }
+.capsule:not(:disabled):active { transform: translateY(3px); box-shadow: 0 1px 0 #15112e; }
+.capsule:disabled { cursor: default; }
+.capsule.poor { opacity: .55; }
+.capsule .ico { grid-area: ico; font-size: 40px; align-self: center; text-align: center; }
+.capsule .title { grid-area: title; font-weight: 900; font-size: 16px; }
+.capsule .tag { grid-area: tag; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.capsule .desc { grid-area: desc; font-size: 13px; margin-top: 4px; }
+.capsule .tip { grid-area: tip; font-size: 12px; color: #9fd9ff; }
+.capsule .price { grid-area: price; justify-self: end; font-weight: 900; color: var(--accent); }
+.capsule .price small { color: var(--muted); font-weight: 700; }
+.shop-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.shop-foot .wallet { font-weight: 900; font-size: 18px; }
+#shopItems .owned { font-size: 13px; color: var(--muted); }
+#gear .saves { font-size: .8em; }
+.mini-pill { display: inline-block; padding: 4px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-weight: 800; font-size: 13px; }
+#minihud { text-align: center; }

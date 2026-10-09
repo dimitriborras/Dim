@@ -86,7 +86,8 @@ function onMessage(msg) {
       break;
     case 'shop':
       if (!msg.ok) hud?.toast(msg.reason ?? 'Achat impossible', true);
-      else if (msg.pending) hud?.toast('Transaction en cours… (1,5 s)');
+      else if (msg.reroll) { hud?.toast('🔄 Nouvelles capsules !'); sfx.play({ type: 'microAnnounce' }, null); }
+      else { hud?.toast(`✔ ${hud?.items.get(msg.item)?.name ?? 'Acheté'}${msg.replaces ? ` (remplace ${hud?.items.get(msg.replaces)?.icon ?? ''})` : ''}`); vibrate([10, 30, 10]); }
       break;
     case 'error':
       if (!youId) menuError(msg.reason);
@@ -130,7 +131,7 @@ function onSnap(msg) {
   const players = new Map(msg.roster.map((r) => [r.id, r]));
   for (const ev of msg.ev) {
     renderer.addEvent(ev, players, youId);
-    if (ev.type === 'dmg' && ev.id === youId) vibrate(35);
+    if (ev.type === 'saved' && ev.id === youId) vibrate([15, 30, 15]);
     if (ev.type === 'elim' && ev.killer === youId) vibrate([25, 40, 60]);
     if (ev.type === 'elim' && ev.victim === youId) vibrate(120);
     sfx.play(ev, youId);
@@ -206,11 +207,6 @@ function interpolate() {
     return { ...p, x: lerp(q.x, p.x, k), y: lerp(q.y, p.y, k), a: lerpAngle(q.a, p.a, k) };
   });
   const tupleMap = (arr) => new Map(arr.map((x) => [x[0], x]));
-  const projA = tupleMap(A.proj);
-  const proj = B.proj.map(([id, x, y, kind, r]) => {
-    const q = projA.get(id);
-    return q ? { x: lerp(q[1], x, k), y: lerp(q[2], y, k), px: q[1], py: q[2], kind, r } : { x, y, kind, r };
-  });
   const bombA = tupleMap(A.bombs);
   const bombs = B.bombs.map(([id, x, y, fuse]) => {
     const q = bombA.get(id);
@@ -231,7 +227,6 @@ function interpolate() {
     map: B.map,
     time: lerp(A.t, B.t, k),
     players,
-    proj,
     bombs,
     decoys,
     balls,
@@ -244,7 +239,7 @@ function interpolate() {
 const predictor = new Predictor();
 // Heure du serveur estimée (même référence que les instantanés) : sert aux micro-jeux de réflexe.
 const serverNow = () => performance.now() / 1000 - (clockOffset ?? 0);
-const micro = new MicroOverlay($('#micro'), { send: (m) => conn?.send(m), serverNow, sfx });
+const micro = new MicroOverlay($('#micro'), { send: (m) => conn?.send(m), serverNow, sfx, nameOf: (id) => (id === 'ghost' ? '👻 Fantôme' : hud?.roster?.get(id)?.name ?? '?') });
 // Aperçu de la pichenette : simulation exacte (même physique que le serveur) depuis la
 // position affichée, avec les plateformes mobiles à leur position actuelle.
 function trajectory(st, snap) {
@@ -252,7 +247,10 @@ function trajectory(st, snap) {
   if (!ch || ch.cancel || ch.tap) return null;
   const me = st.players.find((p) => p.id === youId);
   if (!me || me.s !== 'alive') return null;
-  const map = MAPS[st.map] ?? MAPS.arena;
+  let map = MAPS[st.map] ?? MAPS.arena;
+  // Poches gloutonnes : l'aperçu tient compte des poches agrandies.
+  const scale = snap.m.hud?.kind === 'glutton' ? snap.m.hud.scale : 1;
+  if (scale > 1 && map.pockets) map = { ...map, pockets: map.pockets.map((pk) => ({ ...pk, r: pk.r * scale })) };
   const movers = (st.movers ?? []).map(([x, y], i) => ({ x, y, w: map.movingPlatforms[i]?.w ?? 0, h: map.movingPlatforms[i]?.h ?? 0 }));
   const isGround = (x, y) => isGroundAt(map, movers, x, y);
   const springAt = (x, y) => map.springs.some((r) => pointInRect(x, y, r));
@@ -287,11 +285,11 @@ function frame() {
     roster: new Map(latest.roster.map((r) => [r.id, r])),
     champion: m.phase === 'combat' || m.phase === 'rewards' ? m.champion : null,
     crownHolder: m.hud?.kind === 'crown' ? m.hud.holder : null,
-    channel: latest.you?.channel,
     energy: predictor.pos ? predictor.energy : latest.you?.energy ?? 0,
     trajectory: trajectory(st, latest),
     microTarget: m.hud?.kind === 'micro' && m.hud.physics === 'circle' ? { ...MAPS.micro.center, r: m.hud.data?.radius ?? 85 } : null,
-    showHp: ['combat', 'finale'].includes(m.phase),
+    energyMax: latest.you?.energyMax,
+    pocketScale: m.hud?.kind === 'glutton' ? m.hud.scale : 1,
     touch: isTouch,
   };
   renderer.draw(currentState);

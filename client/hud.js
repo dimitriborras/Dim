@@ -9,15 +9,15 @@ const PHASE_LABEL = {
   lobby: '🎱 Billard libre',
   intro: 'Préparez-vous…',
   minigame: '',
-  rewards: 'Résultats & boutique sûre',
-  combat: '⚔️ COMBAT',
-  lastShop: '🛒 Derniers achats',
+  rewards: '🎰 Distributeur',
+  combat: '🎱 MÊLÉE',
+  lastShop: 'Fin de la Mêlée',
   finaleIntro: '🏆 FINALE',
   finale: '🏆 FINALE',
   final: 'Classement final',
 };
 
-const CATEGORY_LABEL = { weapon: 'arme', gadget: 'gadget', consumable: 'consommable', upgrade: 'amélioration' };
+const CATEGORY_LABEL = { perk: 'atout permanent', gadget: 'gadget · bouton rond' };
 
 export class Hud {
   constructor({ send, items, onShopToggle }) {
@@ -36,13 +36,9 @@ export class Hud {
     this.bindSettings();
     $('#shopClose').onclick = () => this.toggleShop(false);
     $('#shopItems').addEventListener('click', (e) => {
-      const b = e.target.closest('button[data-item]');
-      if (!b) return;
-      const slot = b.dataset.slot ? Number(b.dataset.slot) : undefined;
-      this.send({ t: 'buy', item: b.dataset.item, slot });
-    });
-    $('#shopItems').addEventListener('click', (e) => {
-      if (e.target.closest('button[data-cancel]')) this.send({ t: 'cancelBuy' });
+      const b = e.target.closest('[data-item]');
+      if (b && !b.disabled) this.send({ t: 'buy', item: b.dataset.item });
+      if (e.target.closest('[data-reroll]')) this.send({ t: 'reroll' });
     });
     $('#lobby').addEventListener('click', (e) => this.onLobbyClick(e));
     $('#lobby').addEventListener('change', (e) => {
@@ -88,8 +84,11 @@ export class Hud {
     const plain = (id) => esc(this.roster?.get(id)?.name ?? '?');
     switch (ev.type) {
       case 'elim':
-        if (ev.killer === youId) this.announce(`💥 ${plain(ev.victim)} ${ev.cause === 'fall' ? 'poussé dans le vide' : 'K.O.'} !`, 'good');
-        else if (ev.victim === youId) this.announce(ev.killer ? `Éliminé par ${plain(ev.killer)}` : ev.cause === 'fall' ? 'Tombé dans le vide…' : 'K.O. !', 'bad');
+        {
+          const into = this.map === 'arena' || this.map === 'golf' ? 'dans une poche' : 'dans le vide';
+          if (ev.killer === youId) this.announce(`🎱 ${plain(ev.victim)} poussé ${into} !`, 'good');
+          else if (ev.victim === youId) this.announce(ev.killer ? `Poussé par ${plain(ev.killer)}` : `Tombé ${into}…`, 'bad');
+        }
         {
           const pool = this.map === 'arena';
           if (ev.killer) this.pushFeed(`${this.name(ev.killer)} ${ev.cause === 'fall' ? (pool ? '🎱 empoche' : '🌀 pousse') : '💥'} ${this.name(ev.victim)}`);
@@ -99,6 +98,7 @@ export class Hud {
       case 'bought': this.pushFeed(`${this.name(ev.id)} achète ${it(ev.item)?.icon ?? ''} ${esc(it(ev.item)?.name ?? '')}`); break;
       case 'points':
         if (ev.id === youId && ev.reason === 'Carton') this.announce('💥 CARTON !<small>+1 point</small>', 'good');
+        else if (ev.id === youId && ev.reason === 'Boule empochée') this.announce('🎱 Boule empochée !<small>+1 point</small>', 'good');
         else if (ev.id === youId && ev.reason !== 'Mini-jeu' && ev.reason !== 'Finale') this.pushFeed(`🏆 +${ev.amount} pts — ${esc(ev.reason)}`);
         break;
       case 'credits':
@@ -115,13 +115,21 @@ export class Hud {
         break;
       case 'champion':
         this.pushFeed(`🎯 ${this.name(ev.id)} est le champion : bouclier + prime !`);
-        this.announce(ev.id === youId ? '🎯 Tu es le champion !<small>Bouclier actif… mais ta tête est mise à prix</small>' : `🎯 Prime sur ${plain(ev.id)}<small>+2 pts et +30 crédits pour qui l'élimine</small>`, ev.id === youId ? 'good' : '');
+        this.announce(ev.id === youId ? '🎯 Tu es le champion !<small>Une bouée gratuite… mais ta tête est mise à prix</small>' : `🎯 Prime sur ${plain(ev.id)}<small>+2 pts et +30 crédits pour qui l'empoche</small>`, ev.id === youId ? 'good' : '');
         break;
       case 'join': this.pushFeed(`➕ ${esc(ev.name)} rejoint la salle`); break;
       case 'leave': this.pushFeed(`➖ ${esc(ev.name)} est parti`); break;
       case 'host': this.pushFeed(`⭐ ${this.name(ev.id)} devient l'hôte`); break;
       case 'finish': this.pushFeed(`🏁 ${this.name(ev.id)} arrive ${ev.place === 1 ? '1er' : `${ev.place}e`} !`); break;
       case 'crownTake': this.pushFeed(`👑 ${this.name(ev.id)} prend la couronne`); break;
+      case 'crownSteal':
+        if (ev.id === youId) this.announce('👑 Couronne volée !', 'good');
+        else if (ev.victim === youId) this.announce(`👑 ${plain(ev.id)} t'a volé la couronne !`, 'bad');
+        break;
+      case 'saved': if (ev.id === youId) this.announce('🛟 Sauvé par la bouée !', 'good'); break;
+      case 'meneEnd':
+        if (ev.scores?.[youId] !== undefined) this.announce(`🎯 Mène terminée<small>+${ev.scores[youId]} point${ev.scores[youId] > 1 ? 's' : ''}</small>`, ev.scores[youId] > 0 ? 'good' : '');
+        break;
       case 'coinLoss': if (ev.id === youId) this.toast(`Chute : -${ev.amount} jetons`, true); break;
       default: break;
     }
@@ -137,8 +145,8 @@ export class Hud {
 
     if (m.phase !== this.lastPhase) {
       this.phaseStartedAt = performance.now();
-      if (m.phase === 'rewards' || m.phase === 'lastShop') this.toggleShop(true);
-      if (m.phase === 'combat' || m.phase === 'intro' || m.phase === 'finaleIntro' || m.phase === 'lobby') this.toggleShop(false);
+      if (m.phase === 'rewards' && you?.inMatch) this.toggleShop(true);
+      else this.toggleShop(false);
       this.lastPhase = m.phase;
     }
 
@@ -169,9 +177,12 @@ export class Hud {
       if (m.hud?.kind === 'coins') return `🪙 ${m.hud.scores[r.id] ?? 0}`;
       if (m.hud?.kind === 'micro') return `⭐ ${m.hud.scores[r.id] ?? 0}`;
       if (m.hud?.kind === 'crown') return `👑 ${(m.hud.held[r.id] ?? 0).toFixed(0)}s`;
+      if (m.hud?.kind === 'palet') return `🎯 ${m.hud.scores[r.id] ?? 0}`;
+      if (m.hud?.kind === 'glutton') return m.hud.out.includes(r.id) ? '💀' : '🟢';
       return inMatch ? `${r.pts} pts` : `🎱 ${r.ls ?? 0}${r.host ? ' ⭐' : ''}`;
     };
-    const head = inMatch ? `<div class="head"><span>Classement</span><span>${m.hud?.kind === 'coins' ? 'jetons' : m.hud?.kind === 'crown' ? 'couronne' : 'points'}</span></div>` : '<div class="head"><span>Joueurs</span></div>';
+    const unit = { coins: 'jetons', crown: 'couronne', palet: 'cible', glutton: 'en vie', micro: 'réussis' }[m.hud?.kind] ?? 'points';
+    const head = inMatch ? `<div class="head"><span>Classement</span><span>${unit}</span></div>` : '<div class="head"><span>Joueurs</span></div>';
     $('#scoreboard').innerHTML = head + rows.map((r) => `
       <div class="row ${r.id === this.youId ? 'me' : ''} ${r.conn ? '' : 'off'}">
         <span class="dot" style="background:${r.color}"></span>
@@ -188,8 +199,8 @@ export class Hud {
       html = `<div class="card"><h2>${esc(m.mg.name)}</h2><p>${esc(m.mg.description)}</p><div class="big">${Math.max(1, Math.ceil(m.timeLeft ?? 0))}</div></div>`;
     } else if ((m.phase === 'rewards' || m.phase === 'final') && m.results && m.phase === 'rewards') {
       const rows = m.results.awards.map((a) => `<tr><td>${a.rank}</td><td>${this.name(a.id)}</td><td class="num">+${a.credits} 💰</td><td class="num">+${a.points} 🏆</td></tr>`).join('');
-      const champ = m.champion ? `<p>🎯 ${this.name(m.champion)} est le champion : un bouclier absorbe sa première attaque, mais sa tête est mise à prix (+2 pts, +30 💰).</p>` : '';
-      html = `<div class="card"><h2>${esc(m.results.name)}</h2><table class="res"><tr><th>#</th><th>Joueur</th><th>Crédits</th><th>Points</th></tr>${rows}</table>${champ}<p>Achetez maintenant : la boutique est sûre. Combat dans ${Math.ceil(m.timeLeft ?? 0)} s.</p></div>`;
+      const champ = m.champion ? `<p>🎯 ${this.name(m.champion)} est le champion : une bouée gratuite, mais sa tête est mise à prix (+2 pts, +30 💰).</p>` : '';
+      html = `<div class="card"><h2>${esc(m.results.name)}</h2><table class="res"><tr><th>#</th><th>Joueur</th><th>Crédits</th><th>Points</th></tr>${rows}</table>${champ}<p>🎰 Distributeur ouvert. Mêlée sur le billard dans ${Math.ceil(m.timeLeft ?? 0)} s.</p></div>`;
     } else if (m.phase === 'final' && m.standings) {
       const s = m.standings;
       const pod = [s[1], s[0], s[2]].filter(Boolean).map((p) => `<div class="p${p.rank}">${p.rank === 1 ? '👑' : p.rank}<br>${esc(p.name)}<br>${p.points} pts</div>`).join('');
@@ -198,11 +209,13 @@ export class Hud {
     } else if (you?.respawn > 0 && m.phase !== 'lobby') {
       html = `<div class="msg">Réapparition dans ${you.respawn.toFixed(1)} s</div>`;
     } else if (m.phase === 'combat' && sinceStart < 1.6) {
-      html = '<div class="big">COMBAT !</div>';
+      html = '<div class="big">MÊLÉE !</div>';
+    } else if (m.hud?.kind === 'palet' && m.hud.phase === 'score' && m.hud.last) {
+      html = `<div class="msg">🎯 Mène ${m.hud.mene}/${m.hud.menes} : +${m.hud.last[this.youId] ?? 0}</div>`;
     } else if ((m.phase === 'minigame' || m.phase === 'finale') && sinceStart < 1.2) {
       html = '<div class="big">GO !</div>';
     } else if (m.phase === 'lastShop') {
-      html = `<div class="msg">Derniers achats — ${m.round >= m.rounds ? 'finale' : 'manche suivante'} dans ${Math.ceil(m.timeLeft ?? 0)} s</div>`;
+      html = `<div class="msg">Fin de la Mêlée — ${m.round >= m.rounds ? 'finale' : 'manche suivante'} dans ${Math.ceil(m.timeLeft ?? 0)} s</div>`;
     }
     if (c.innerHTML !== html) c.innerHTML = html;
   }
@@ -253,25 +266,22 @@ export class Hud {
     this.send({ t: a });
   }
 
-  // Équipement en lecture seule (le tir est automatique) et bouton d'objet unique.
+  // Atouts (lecture seule) et bouton rond du gadget avec ses charges.
   renderInventory(you) {
     if (!you) return;
     const inv = you.inv;
-    const gear = inv.slots
-      .filter((x) => x && this.items.get(x.id)?.category === 'weapon')
-      .map((x) => `<span class="${inv.slots[inv.active]?.id === x.id ? 'on' : ''}" title="${esc(this.items.get(x.id)?.name ?? '')}">${this.items.get(x.id)?.icon ?? '?'}${x.level > 1 ? '<sup>II</sup>' : ''}</span>`)
-      .join('');
-    const shownGear = you.inMatch ? gear : '';
-    if ($('#gear').innerHTML !== shownGear) $('#gear').innerHTML = shownGear;
+    const perks = you.inMatch
+      ? inv.perks.map((id) => `<span title="${esc(this.items.get(id)?.name ?? '')}">${this.items.get(id)?.icon ?? '?'}</span>`).join('')
+        + (you.saves > 0 ? `<span class="saves" title="Bouée prête">🛟${you.saves > 1 ? you.saves : ''}</span>` : '')
+      : '';
+    if ($('#gear').innerHTML !== perks) $('#gear').innerHTML = perks;
     $('#wallet').innerHTML = you.inMatch ? `💰 ${you.credits}<br>🏆 ${you.points}` : '💰 —<br>🏆 —';
-    // Objet utilisable : le gadget s'il en a un, sinon le premier consommable.
-    const gadget = inv.slots.find((x) => x && this.items.get(x.id)?.category === 'gadget');
-    const cons = inv.consumables.filter(Boolean);
-    const icon = gadget ? this.items.get(gadget.id)?.icon : cons.length ? this.items.get(cons[0])?.icon : null;
-    const cd = gadget?.cooldownTotal ? (gadget.cooldown / gadget.cooldownTotal) * 100 : 0;
+    const g = inv.gadget;
+    const icon = g ? this.items.get(g.id)?.icon : null;
     const btn = $('#itemBtn');
-    btn.classList.toggle('empty', !icon);
-    const html = `<span class="ico">${icon ?? '·'}</span>${!gadget && cons.length > 1 ? `<b class="count">${cons.length}</b>` : ''}<i class="ring" style="--cd:${cd.toFixed(0)}%"></i>`;
+    btn.classList.toggle('empty', !g || g.charges <= 0);
+    const cd = g && g.cooldown > 0 ? 100 : 0;
+    const html = `<span class="ico">${icon ?? '·'}</span>${g ? `<b class="count">${g.charges}</b>` : ''}<i class="ring" style="--cd:${cd}%"></i>`;
     if (btn.innerHTML !== html) btn.innerHTML = html;
   }
 
@@ -328,10 +338,16 @@ export class Hud {
         return r ? `<span class="dot" title="${esc(r.name)}" style="left:${(p.progress * 100).toFixed(1)}%;background:${r.color};${p.id === this.youId ? 'width:16px;height:16px;top:0' : ''}"></span>` : '';
       }).join('');
       el.innerHTML = `<div class="race-bar">${dots}<span class="flag">🏁</span></div>`;
+    } else if (m.hud?.kind === 'palet') {
+      const html = `<div class="mini-pill">🎯 Mène ${m.hud.mene}/${m.hud.menes} · 2 pichenettes</div>`;
+      if (el.innerHTML !== html) el.innerHTML = html;
+    } else if (m.hud?.kind === 'glutton') {
+      const html = `<div class="mini-pill">🕳️ Poches ×${m.hud.scale.toFixed(1)} · ${m.hud.alive.length} en vie</div>`;
+      if (el.innerHTML !== html) el.innerHTML = html;
     } else if (el.innerHTML) {
       el.innerHTML = '';
     }
-    document.body.classList.toggle('race-on', m.hud?.kind === 'race');
+    document.body.classList.toggle('race-on', ['race', 'palet', 'glutton'].includes(m.hud?.kind));
   }
 
   renderFeed() {
@@ -341,52 +357,36 @@ export class Hud {
     if ($('#feed').innerHTML !== html) $('#feed').innerHTML = html;
   }
 
+  // Le Distributeur : trois capsules personnelles, achat direct, relance.
   renderShop(you, m) {
     if (!you) return;
-    const mode = m.shop;
-    const key = JSON.stringify([m.offers, you.credits, you.inv.slots.map((s) => s && [s.id, s.level]), you.inv.consumables, mode, you.channel?.item, you.inMatch]);
-    const modeEl = $('#shopMode');
-    modeEl.className = mode === 'combat' ? 'combat' : '';
-    modeEl.textContent = mode === 'safe' ? 'Phase sûre : achat immédiat'
-      : mode === 'combat' ? 'En combat : 1,5 s d\'achat, ralenti et sans tir !'
-        : 'Fermée pour le moment';
-    if (you.channel) {
-      const bar = document.querySelector('#shopItems .channel i');
-      if (bar) bar.style.width = `${you.channel.progress * 100}%`;
-    }
+    const open = m.shop === 'open' && you.inMatch;
+    const key = JSON.stringify([you.offers, you.credits, you.inv, you.freeRerolls, open]);
+    $('#shopMode').textContent = open ? `${Math.ceil(m.timeLeft ?? 0)} s avant la Mêlée` : 'Fermé : rouvre après chaque mini-jeu';
     if (key === this.shopKey) return;
     this.shopKey = key;
     const inv = you.inv;
-    const permanentFull = inv.slots.every((s) => s);
-    const consFull = inv.consumables.every((c) => c);
-    const html = m.offers.map((id) => {
+    const cards = (you.offers ?? []).map((id) => {
       const d = this.items.get(id);
       if (!d) return '';
-      const owned = d.category === 'upgrade'
-        ? inv.slots.some((s) => s?.id === 'pistol' && s.level >= 2)
-        : (d.category === 'weapon' || d.category === 'gadget') && inv.slots.some((s) => s?.id === id);
       const afford = you.credits >= d.price;
-      let actions;
-      if (!you.inMatch || mode === 'closed') actions = '<span class="note">Indisponible</span>';
-      else if (you.channel?.item === id) actions = '<div class="channel" style="flex:1"><i style="width:0%"></i></div><button class="btn small ghost" data-cancel="1">Annuler</button>';
-      else if (owned) actions = `<span class="note">${d.category === 'upgrade' ? 'Niveau max atteint' : 'Déjà équipé'}</span>`;
-      else if (d.category === 'consumable' && consFull) actions = '<span class="note">Emplacements de consommables pleins</span>';
-      else if ((d.category === 'weapon' || d.category === 'gadget') && permanentFull) {
-        actions = [1, 2].map((i) => `<button class="btn small" data-item="${id}" data-slot="${i}" ${afford ? '' : 'disabled'}>Remplacer ${this.items.get(inv.slots[i].id)?.icon ?? ''} (empl. ${i + 1})</button>`).join('');
-      } else {
-        const where = d.category === 'consumable' ? 'consommable' : d.category === 'upgrade' ? 'améliore le pistolet' : `empl. ${inv.slots.findIndex((s, i) => i > 0 && !s) + 1}`;
-        actions = `<button class="btn small ${afford ? 'primary' : ''}" data-item="${id}" ${afford ? '' : 'disabled'}>Acheter</button><span class="note">→ ${where}</span>`;
-      }
-      return `<div class="offer ${owned ? 'owned' : ''}">
+      let note = '';
+      if (d.category === 'perk' && inv.perks.length >= 3) note = `remplace ${this.items.get(inv.perks[0])?.icon ?? ''}`;
+      if (d.category === 'gadget' && inv.gadget) note = `remplace ${this.items.get(inv.gadget.id)?.icon ?? ''}`;
+      return `<button class="capsule ${d.category} ${afford ? '' : 'poor'}" data-item="${id}" ${open && afford ? '' : 'disabled'}>
         <span class="ico">${d.icon}</span>
-        <span class="title">${esc(d.name)}<span class="tag">${CATEGORY_LABEL[d.category]} · ${esc(d.role)}</span></span>
-        <span class="price">${d.price} 💰</span>
+        <span class="title">${esc(d.name)}</span>
+        <span class="tag">${CATEGORY_LABEL[d.category]}${d.charges ? ` · ${d.charges} charge${d.charges > 1 ? 's' : ''}` : ''}</span>
         <span class="desc">${esc(d.description)}</span>
-        <span class="counter">Contre : ${esc(d.counters)}</span>
-        <div class="buy">${actions}</div>
-      </div>`;
+        <span class="tip">${esc(d.tip ?? '')}</span>
+        <span class="price">${d.price} 💰${note ? `<small> · ${note}</small>` : ''}</span>
+      </button>`;
     }).join('');
-    $('#shopItems').innerHTML = html;
+    const empty = !cards ? '<p class="note">Main vide : relance pour de nouvelles capsules.</p>' : '';
+    const free = you.freeRerolls > 0;
+    const reroll = `<button class="btn small ${free ? 'primary' : ''}" data-reroll="1" ${open && (free || you.credits >= 15) ? '' : 'disabled'}>🔄 Relancer ${free ? '(gratuit)' : '(15 💰)'}</button>`;
+    const owned = `<div class="owned">Atouts : ${inv.perks.map((id) => this.items.get(id)?.icon).join(' ') || '—'} · Gadget : ${inv.gadget ? this.items.get(inv.gadget.id)?.icon : '—'}</div>`;
+    $('#shopItems').innerHTML = `<div class="capsules">${cards}</div>${empty}<div class="shop-foot">${reroll}<span class="wallet">💰 ${you.credits}</span></div>${owned}`;
   }
 
   renderFullTable(snap, show) {

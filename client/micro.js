@@ -3,6 +3,9 @@
 // l'instant estimé côté serveur (`serverNow`) pour que les jeux de réflexe restent équitables.
 import { vibrate } from './settings.js';
 import { SKILLS } from '../shared/game/minigames/micros.js';
+import { Mic } from './mic.js';
+
+const RPS = ['✊', '✋', '✌️'];
 
 const PADS = ['#ff4d4d', '#3d8bff', '#3ddc84', '#ffd23d'];
 // Position des gobelets après les `k` premiers échanges (pos[gobelet] = emplacement).
@@ -21,7 +24,9 @@ function cupSlots(swaps, k) {
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export class MicroOverlay {
-  constructor(root, { send, serverNow, sfx }) {
+  constructor(root, { send, serverNow, sfx, nameOf = () => '?' }) {
+    this.nameOf = nameOf;
+    this.mic = new Mic();
     this.root = root;
     this.send = send;
     this.serverNow = serverNow;
@@ -55,6 +60,7 @@ export class MicroOverlay {
     this.youId = snap.you?.id;
     if (!h || h.kind !== 'micro' || snap.m.phase !== 'minigame') {
       if (!this.root.hidden) { this.root.hidden = true; document.body.classList.remove('micro-on', 'micro-phys'); }
+      if (this.mic.state === 'on') this.mic.stop();
       this.hud = null;
       return;
     }
@@ -85,10 +91,14 @@ export class MicroOverlay {
     void verb.offsetWidth; // relance l'animation
     verb.classList.add('pop');
     this.el('.m-hint').textContent = h.phase === 'announce' && h.index > 0 && h.index % 3 === 0 ? `⚡ PLUS VITE ! — ${h.hint}` : h.hint;
+    // Le micro n'est ouvert que le temps du micro-jeu de souffle.
+    if (h.id === 'blow' && h.phase !== 'result') this.mic.start();
+    else if (this.mic.state === 'on') this.mic.stop();
     if (h.phase === 'announce') {
       this.stage.innerHTML = '';
       this.local = {};
       this.tone('microAnnounce');
+      if (h.id === 'blow') this.el('.m-hint').textContent = '🎤 Autorise le micro… et prépare-toi à souffler !';
     } else if (h.phase === 'play') {
       this.buildStage(h);
     } else if (h.phase === 'result') {
@@ -101,7 +111,11 @@ export class MicroOverlay {
     const mine = h.results?.[this.youId];
     const res = this.el('.m-result');
     const row = Object.entries(h.results ?? {}).map(([id, ok]) => `<span class="${ok ? 'ok' : 'ko'}" data-id="${esc(id)}">${ok ? '✔' : '✘'}</span>`).join('');
-    res.innerHTML = mine === undefined ? '' : `<div class="stamp ${mine ? 'ok' : 'ko'}">${mine ? `✔ RÉUSSI !<small>+${h.boss ? 2 : 1}</small>` : '✘ RATÉ'}</div><div class="others">${row}</div>`;
+    const you = this.you ?? {};
+    const duel = h.data?.pairs && you.opp
+      ? `<div class="m-vs">${h.id === 'rps' ? `${RPS[you.choice] ?? '…'} <small>contre</small> ${RPS[you.oppChoice] ?? '…'}` : `<small>contre</small> ${esc(this.nameOf(you.opp))}`}</div>`
+      : '';
+    res.innerHTML = mine === undefined ? '' : duel + `<div class="stamp ${mine ? 'ok' : 'ko'}">${mine ? `✔ RÉUSSI !<small>+${h.boss ? 2 : 1}</small>` : '✘ RATÉ'}</div><div class="others">${row}</div>`;
     if (mine !== undefined) {
       this.tone(mine ? 'microWin' : 'microLose');
       vibrate(mine ? [20, 40, 20] : 80);
@@ -159,6 +173,19 @@ export class MicroOverlay {
       case 'spell':
         st.innerHTML = `<div class="m-big">${esc(d.emoji)}</div>
           <div class="m-choices m-col">${d.options.map((w, i) => `<button class="m-choice" data-choice="${i}">${esc(w)}</button>`).join('')}</div>`;
+        break;
+      case 'tug':
+        st.innerHTML = `<div class="m-vs">Toi <small>contre</small> ${esc(this.nameOf(d.pairs?.[this.youId]))}</div><div class="m-rope"><div class="m-knot">🎀</div><span class="me">🫵</span><span class="them">😤</span></div><div class="m-tapzone">TAPE, TAPE, TAPE !</div>`;
+        break;
+      case 'western':
+        st.innerHTML = `<div class="m-vs">Toi <small>contre</small> ${esc(this.nameOf(d.pairs?.[this.youId]))}</div><div class="m-draw m-western">🤠 … 🤠</div>`;
+        break;
+      case 'rps':
+        st.innerHTML = `<div class="m-vs">Toi <small>contre</small> ${esc(this.nameOf(d.pairs?.[this.youId]))}</div><div class="m-choices">${RPS.map((e, i) => `<button class="m-choice m-emoji" data-choice="${i}">${e}</button>`).join('')}</div>`;
+        break;
+      case 'blow':
+        st.innerHTML = `<div class="m-cake">${Array.from({ length: d.candles }, () => '<span class="m-candle"><i>🔥</i></span>').join('')}<div class="m-cake-base">🎂</div></div>
+          <div class="m-meter"><i></i></div><div class="m-counter m-blow-msg"></div>`;
         break;
       default:
         st.innerHTML = '';
@@ -238,6 +265,28 @@ export class MicroOverlay {
         e.preventDefault();
         return;
       }
+      if (h.id === 'tug') {
+        this.local.taps = (this.local.taps ?? 0) + 1;
+        this.send({ t: 'mg', k: 'tap', v: 1 });
+        this.tone('microTap');
+        vibrate(5);
+        e.preventDefault();
+        return;
+      }
+      if (h.id === 'western') {
+        if (this.local.tapped) return;
+        this.local.tapped = this.serverNow();
+        this.send({ t: 'mg', k: 'tap', v: 1, at: Math.round(this.local.tapped * 1000) / 1000 });
+        this.tone('punch');
+        vibrate(20);
+        e.preventDefault();
+        return;
+      }
+      if (h.id === 'blow') {
+        this.local.rub = { x: e.clientX, y: e.clientY, t: performance.now() };
+        e.preventDefault();
+        return;
+      }
       if (h.id === 'pump') {
         this.local.taps = (this.local.taps ?? 0) + 1;
         this.send({ t: 'mg', k: 'tap', v: 1 });
@@ -259,6 +308,16 @@ export class MicroOverlay {
       e.preventDefault();
     });
     st.addEventListener('pointermove', (e) => {
+      // Sans micro, frotter l'écran fait office de souffle.
+      if (this.hud?.id === 'blow' && this.local.rub) {
+        const r = this.local.rub;
+        const now = performance.now();
+        const dt = Math.max(1, now - r.t);
+        const speed = Math.hypot(e.clientX - r.x, e.clientY - r.y) / dt; // px/ms
+        this.local.rubLevel = Math.max(this.local.rubLevel ?? 0, Math.min(1, speed / 1.2));
+        this.local.rub = { x: e.clientX, y: e.clientY, t: now };
+        return;
+      }
       if (this.hud?.id !== 'wind' || this.local.winding !== e.pointerId) return;
       const a = Math.atan2(e.clientY - this.local.cy, e.clientX - this.local.cx);
       let da = a - this.local.angle;
@@ -269,7 +328,7 @@ export class MicroOverlay {
       this.local.turns = (this.local.turns ?? 0) + Math.abs(da) / (Math.PI * 2);
       this.local.rot = (this.local.rot ?? 0) + da;
     });
-    const end = (e) => { if (this.local.winding === e.pointerId) this.local.winding = null; };
+    const end = (e) => { this.local.rub = null; if (this.local.winding === e.pointerId) this.local.winding = null; };
     st.addEventListener('pointerup', end);
     st.addEventListener('pointercancel', end);
   }
@@ -341,6 +400,45 @@ export class MicroOverlay {
         if (fg) fg.style.strokeDasharray = `${Math.min(100, (turns / d.need) * 100)} 100`;
         const key = this.stage.querySelector('.m-key');
         if (key) key.style.transform = `translate(-50%, -50%) rotate(${this.local.rot ?? 0}rad)`;
+        break;
+      }
+      case 'tug': {
+        const k = Math.max(-1, Math.min(1, you.rope ?? 0));
+        const knot = this.stage.querySelector('.m-knot');
+        if (knot) knot.style.left = `${50 - k * 36}%`; // le nœud vient de ton côté quand tu gagnes
+        break;
+      }
+      case 'western': {
+        const el = this.stage.querySelector('.m-western');
+        if (!el) break;
+        const go = now >= d.signalAt;
+        const early = this.local.tapped !== undefined && this.local.tapped < d.signalAt;
+        el.classList.toggle('go', go && !early);
+        el.classList.toggle('early', early);
+        const txt = early ? '😬 Faux départ !' : this.local.tapped ? (you.oppAt !== null && you.oppAt !== undefined && you.oppAt < this.local.tapped ? '💥 Trop lent…' : '💥 PAN !') : go ? '🔔 DÉGAINE !' : '🤠 … 🤠';
+        if (el.textContent !== txt) {
+          el.textContent = txt;
+          if (go && !early && !this.local.tapped) vibrate(40);
+        }
+        break;
+      }
+      case 'blow': {
+        const mic = this.mic.read();
+        const rub = this.local.rubLevel ?? 0;
+        this.local.rubLevel = rub * 0.8; // le frottement retombe vite quand on arrête
+        const v = Math.max(mic, rub);
+        if (!this.local.sentAt || performance.now() - this.local.sentAt > 90) {
+          if (v > 0.05) this.send({ t: 'mg', k: 'blow', v: Math.round(v * 100) / 100 });
+          this.local.sentAt = performance.now();
+          this.local.breath = Math.min(d.candles, (this.local.breath ?? 0) + v * 0.09 * 2.6);
+        }
+        const out = Math.max(you.out ?? 0, Math.floor(this.local.breath ?? 0));
+        this.stage.querySelectorAll('.m-candle').forEach((c, i) => c.classList.toggle('out', i < out));
+        const meter = this.stage.querySelector('.m-meter i');
+        if (meter) meter.style.transform = `scaleX(${v})`;
+        const msg = this.stage.querySelector('.m-blow-msg');
+        const txt = this.mic.state === 'on' ? '🎤 Souffle fort !' : this.mic.state === 'asking' ? '🎤 Autorise le micro… ou frotte l\'écran' : '👆 Pas de micro : frotte l\'écran très vite !';
+        if (msg && msg.textContent !== txt) msg.textContent = txt;
         break;
       }
       case 'moles': {

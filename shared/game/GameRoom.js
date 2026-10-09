@@ -1,4 +1,4 @@
-import { MAX_PLAYERS, PLAYER_COLORS, SNAPSHOT_EVERY_TICKS, DEFAULT_ROUNDS, ROUND_OPTIONS, TICK_RATE } from '../constants.js';
+import { MAX_PLAYERS, PLAYER_COLORS, SNAPSHOT_EVERY_TICKS, DEFAULT_ROUNDS, ROUND_OPTIONS, TICK_RATE, PLAYER } from '../constants.js';
 import { ITEMS, publicItem } from '../items.js';
 import { createRng } from '../rng.js';
 import { parseClientMessage, sanitizeName } from '../protocol.js';
@@ -17,7 +17,7 @@ function makePlayer({ id, name, color, joinOrder, bot = null }) {
     actions: [],
     aim: 0, x: 0, y: 0, vx: 0, vy: 0,
     inv: InventorySystem.create(),
-    channel: null, contract: null, championShield: false,
+    contract: null, championShield: false, offers: [], freeRerolls: 0,
   };
   ScoreSystem.initPlayer(p);
   return p;
@@ -161,15 +161,15 @@ export class GameRoom {
         if (msg.fl) p.pendingFlick = msg.fl;
         break;
       case 'buy': {
-        const res = this.match.buy(p, msg.item, msg.slot);
+        const res = this.match.buy(p, msg.item);
         this.match.recordShop(p, res, msg.item);
         break;
       }
+      case 'reroll':
+        this.match.recordShop(p, this.match.reroll(p), null);
+        break;
       case 'mg':
         this.match.minigameInput(p, msg);
-        break;
-      case 'cancelBuy':
-        this.match.shop.cancel(p);
         break;
       case 'start':
         if (isHost && !this.match.start(this.settings.rounds)) this.send(p.id, { t: 'error', reason: 'Il faut au moins 2 joueurs (ajoutez des bots).' });
@@ -199,7 +199,7 @@ export class GameRoom {
 
   notifyShop(p, result, itemId) {
     if (p.bot) return;
-    this.send(p.id, { t: 'shop', item: itemId, ok: !!result?.ok, pending: !!result?.pending, reason: result?.reason ?? null });
+    this.send(p.id, { t: 'shop', item: itemId, ok: !!result?.ok, reroll: !!result?.reroll, replaces: result?.replaces ?? null, reason: result?.reason ?? null });
   }
 
   send(playerId, msg) {
@@ -255,10 +255,13 @@ export class GameRoom {
       credits: p.credits,
       points: p.points,
       inv: InventorySystem.view(p.inv, t),
-      channel: p.channel ? { item: p.channel.itemId, progress: Math.min(1, (t - p.channel.start) / (p.channel.until - p.channel.start)) } : null,
+      offers: p.offers ?? [],
+      freeRerolls: p.freeRerolls ?? 0,
+      energyMax: p.energyMax ?? PLAYER.energyMax,
+      saves: (p.saves ?? 0) + (p.championShield ? 1 : 0),
       contract: p.contract,
       energy: Math.round((p.energy ?? 0) * 100) / 100,
-      respawn: p.state === 'dead' ? Math.max(0, p.respawnAt - t) : 0,
+      respawn: p.state === 'dead' && this.match.world.rules.respawn ? Math.max(0, p.respawnAt - t) : 0,
       inMatch: p.inMatch,
       micro: this.match.minigame?.privateState?.(p.id) ?? null,
       // État physique exact du joueur, pour que son client rejoue ses commandes non confirmées.
@@ -270,10 +273,12 @@ export class GameRoom {
         vy: Math.round(p.vy * 10) / 10,
         energy: Math.round((p.energy ?? 0) * 1000) / 1000,
         fling: Math.max(0, Math.round(((p.flingUntil ?? 0) - t) * 1000) / 1000),
-        sf: (p.speedFactor ?? 1) * (t < (p.slowUntil ?? 0) && t >= (p.bubbleUntil ?? 0) ? 0.6 : 1),
+        sf: (p.speedFactor ?? 1) * (p.powerMul ?? 1) * (t < (p.slowUntil ?? 0) && t >= (p.bubbleUntil ?? 0) ? 0.6 : 1),
+        em: p.energyMax ?? PLAYER.energyMax,
+        er: PLAYER.energyRegen * (p.regenMul ?? 1) * (this.match.world.rules.regen ?? 1),
         slowed: t < (p.slowUntil ?? 0) && t >= (p.bubbleUntil ?? 0),
-        // Prédiction possible : ni renversée, ni en l'air, ni en glissade de banane, ni en achat.
-        free: p.state === 'alive' && !this.match.world.rules.frozen && !p.channel
+        // Prédiction possible : ni renversée, ni en l'air, ni en glissade de banane.
+        free: p.state === 'alive' && !this.match.world.rules.frozen
           && t >= (p.toppleUntil ?? 0) && t >= (p.airborneUntil ?? 0) && t >= (p.slipUntil ?? 0),
       },
     };
