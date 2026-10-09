@@ -3,13 +3,36 @@
 Party game multijoueur 2D (2 à 8 joueurs, 4 à 8 recommandés) : des figurines en plastique enchaînent
 mini-jeux, achats de gadgets et combats dans une arène commune, puis s'affrontent en finale.
 
-## Lancer le jeu
+## Jouer dans son navigateur
 
-```bash
-npm install
-npm start            # http://localhost:8080
-npm test             # 17 tests : économie, anti-triche, phases, réseau
-```
+1. **Installer Node.js** (version 20 ou plus) depuis https://nodejs.org (bouton « LTS »).
+   Vérifier dans un terminal : `node -v`.
+2. **Récupérer le code** :
+   ```bash
+   git clone https://github.com/dimitriborras/Dim.git
+   cd Dim
+   git checkout ccr-f3d1aca3-23s4eb   # inutile une fois la PR fusionnée dans main
+   ```
+   Sans git : sur GitHub, choisir la branche puis « Code → Download ZIP », et décompresser.
+3. **Installer puis lancer** (dans le dossier du jeu) :
+   ```bash
+   npm install
+   npm start
+   ```
+   Le terminal affiche les adresses à ouvrir :
+   ```
+   Sur cet ordinateur :   http://localhost:8080
+   Sur le même Wi-Fi :    http://192.168.1.23:8080
+   ```
+4. **Ouvrir** `http://localhost:8080` dans le navigateur, « Créer une salle », puis partager le lien affiché.
+
+- **Téléphone ou amis sur le même Wi-Fi** : ouvrir l'adresse « Sur le même Wi-Fi ». Sous Windows ou macOS,
+  accepter la demande du pare-feu au premier lancement.
+- **Amis à distance** : exposer le serveur avec un tunnel, par exemple
+  `cloudflared tunnel --url http://localhost:8080`, puis partager l'adresse `https://…` obtenue
+  (les WebSocket passent automatiquement en `wss`).
+- **Port déjà utilisé** : `PORT=3000 npm start` (Windows PowerShell : `$env:PORT=3000; npm start`).
+- `npm test` lance les 17 tests (économie, anti-triche, phases, réseau).
 
 - **Créer une salle** : un code à 4 lettres et un lien à partager s'affichent (aucun compte nécessaire).
 - **Rejoindre** : code ou lien `?room=CODE`. En cas de coupure, le client se reconnecte seul

@@ -3,6 +3,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { GameRoom } from '../shared/game/GameRoom.js';
@@ -51,6 +52,7 @@ export function createServer({ port = 8080, log = console.log } = {}) {
   });
 
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_MESSAGE_BYTES });
+  wss.on('error', () => {}); // les erreurs d'écoute sont remontées par la promesse ci-dessous
 
   wss.on('connection', (ws) => {
     let room = null;
@@ -114,7 +116,8 @@ export function createServer({ port = 8080, log = console.log } = {}) {
     }
   }, 1000 / TICK_RATE / 2);
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    server.once('error', (e) => { clearInterval(loop); reject(e); });
     server.listen(port, () => {
       const addr = server.address();
       resolve({
@@ -128,7 +131,22 @@ export function createServer({ port = 8080, log = console.log } = {}) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || 8080;
-  createServer({ port }).then(({ port: p }) => {
-    console.log(`PLASTIC PANIC prêt sur http://localhost:${p}`);
-  });
+  createServer({ port })
+    .then(({ port: p }) => {
+      // Adresses du réseau local : pour un téléphone ou des amis sur le même Wi-Fi.
+      const lan = Object.values(os.networkInterfaces())
+        .flat()
+        .filter((i) => i && i.family === 'IPv4' && !i.internal)
+        .map((i) => `http://${i.address}:${p}`);
+      console.log('\n  PLASTIC PANIC est prêt !\n');
+      console.log(`  Sur cet ordinateur :   http://localhost:${p}`);
+      for (const url of lan) console.log(`  Sur le même Wi-Fi :    ${url}`);
+      console.log('\n  Ctrl+C pour arrêter.\n');
+    })
+    .catch((e) => {
+      console.error(e.code === 'EADDRINUSE'
+        ? `Le port ${port} est déjà utilisé. Essayez par exemple : PORT=3000 npm start`
+        : e);
+      process.exit(1);
+    });
 }
