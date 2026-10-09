@@ -1,8 +1,14 @@
-import { MICRO_TABLE } from '../../maps.js';
+import { MICRO_TABLE, MICRO_GOLF } from '../../maps.js';
 import { groupRanking } from './MinigameRegistry.js';
 import { MICROS, MICRO_BY_ID } from './micros.js';
 
 const COUNT = 10;
+// Gabarit de la rafale : niveaux autorisés par manche, pauses physiques et boss final.
+const SLOTS = [
+  { lo: 1, hi: 1 }, { lo: 1, hi: 1 }, { lo: 1, hi: 2 }, { physics: true },
+  { lo: 2, hi: 2 }, { lo: 2, hi: 2 }, { physics: true },
+  { lo: 2, hi: 3 }, { lo: 3, hi: 3 }, { physics: true, boss: true },
+];
 const ANNOUNCE = 1.1; // le mot d'ordre s'affiche seul
 const RESULT = 1.0; // verdict « Réussi / Raté »
 
@@ -11,13 +17,13 @@ const RESULT = 1.0; // verdict « Réussi / Raté »
 export class MicroRushMinigame {
   static id = 'micro';
   static name = 'La Rafale';
-  static description = '10 micro-jeux de quelques secondes : un ordre, un geste. Ça accélère !';
+  static description = '10 micro-jeux de quelques secondes : un ordre, un geste. Ça accélère, et le dernier est un boss !';
   static durationSeconds = 120; // plafond de sécurité : la rafale se termine d'elle-même
 
   initialize(ctx) {
     this.ctx = ctx;
     this.wins = new Map(ctx.players.map((p) => [p.id, 0]));
-    this.sequence = this.plan(ctx.rng);
+    this.sequence = this.plan(ctx.rng, ctx.memory);
     this.index = -1;
     this.phase = 'wait';
     this.phaseEnd = 0;
@@ -27,31 +33,57 @@ export class MicroRushMinigame {
     this.world = this.makeWorld();
   }
 
-  // 10 micro-jeux, sans répétition immédiate, dont 2 ou 3 avec la physique de palet.
-  plan(rng) {
-    const simple = MICROS.filter((m) => !m.physics).map((m) => m.id);
-    const physics = MICROS.filter((m) => m.physics).map((m) => m.id);
+  // Séquence cohérente de 10 micro-jeux :
+  //  - échauffement en niveau 1, puis niveau 2, puis les plus durs (niveau 3) en fin de rafale ;
+  //  - jamais deux fois de suite la même capacité (réflexe, calcul, mémoire…) ;
+  //  - deux pauses « physique de palet » aux manches 4 et 7, et un boss physique en dernier
+  //    (plus long, il vaut 2 points) ;
+  //  - on évite les micro-jeux déjà joués dans une rafale précédente du même match.
+  plan(rng, memory = new Set()) {
+    const simple = MICROS.filter((m) => !m.physics);
+    const physics = MICROS.filter((m) => m.physics);
+    const used = new Set();
     const seq = [];
-    let bag = [];
-    const physicsSlots = new Set([2, 5, 8].slice(0, rng.next() < 0.5 ? 2 : 3).map((i) => i + rng.int(0, 1)));
+    const pick = (pool, filters) => {
+      for (let relax = 0; relax <= filters.length; relax++) {
+        const ok = pool.filter((m) => !used.has(m.id) && filters.slice(0, filters.length - relax).every((f) => f(m)));
+        if (ok.length) return rng.pick(ok);
+      }
+      return rng.pick(pool);
+    };
     for (let i = 0; i < COUNT; i++) {
-      if (physicsSlots.has(i)) { seq.push(rng.pick(physics)); continue; }
-      if (!bag.length) bag = rng.shuffle(simple);
-      let next = bag.shift();
-      if (seq[seq.length - 1] === next && bag.length) { bag.push(next); next = bag.shift(); }
-      seq.push(next);
+      const slot = SLOTS[i];
+      const prev = MICRO_BY_ID.get(seq[seq.length - 1]);
+      let m;
+      if (slot.physics) {
+        m = pick(physics, [(x) => (slot.boss ? x.level >= 3 : x.level < 3), (x) => !memory.has(x.id)]);
+      } else {
+        // Par ordre d'importance : on renonce d'abord à la nouveauté, puis à l'alternance, puis au niveau.
+        m = pick(simple, [
+          (x) => x.level >= slot.lo && x.level <= slot.hi,
+          (x) => !prev || x.skill !== prev.skill,
+          (x) => !memory.has(x.id),
+        ]);
+      }
+      used.add(m.id);
+      seq.push(m.id);
     }
+    for (const id of seq) memory.add(id);
     return seq;
   }
 
-  makeWorld() {
+  makeWorld(map = MICRO_TABLE) {
     const w = this.ctx.createWorld({
-      map: MICRO_TABLE,
+      map,
       rules: { damage: false, weapons: 'none', items: false, respawn: false, knockbackScale: 1 },
       hooks: {},
     });
     w.rules.frozen = true;
     return w;
+  }
+
+  isBoss() {
+    return !!SLOTS[this.index]?.boss;
   }
 
   get def() {
@@ -75,7 +107,7 @@ export class MicroRushMinigame {
       return;
     }
     // Micro-jeu physique : nouvelle petite table, tout le monde debout et prêt.
-    if (this.def.physics) this.world = this.makeWorld();
+    if (this.def.physics) this.world = this.makeWorld(this.def.physics === 'golf' ? MICRO_GOLF : MICRO_TABLE);
     this.world.rules.frozen = true;
     this.phase = 'announce';
     this.phaseEnd = this.world.time + ANNOUNCE;
@@ -87,6 +119,7 @@ export class MicroRushMinigame {
     if (this.done) return;
     if (this.phase === 'announce' && t >= this.phaseEnd) {
       this.inst = this.def.create({ rng: this.ctx.rng, speed: this.speed(), start: t });
+      if (this.isBoss()) this.inst.duration *= 1.4; // le boss laisse le temps de s'y reprendre
       this.phase = 'play';
       this.phaseEnd = t + this.inst.duration;
       if (this.def.physics) w.rules.frozen = false;
@@ -103,7 +136,7 @@ export class MicroRushMinigame {
           if (p.connected === false) continue;
           const won = !!this.inst.won(p, w);
           this.results[p.id] = won;
-          if (won) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
+          if (won) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + (this.isBoss() ? 2 : 1));
         }
         w.rules.frozen = true;
         this.phase = 'result';
@@ -140,6 +173,9 @@ export class MicroRushMinigame {
       phase: this.phase,
       phaseEnd: this.phaseEnd,
       id: d?.id ?? null,
+      skill: d?.skill ?? null,
+      level: d?.level ?? 1,
+      boss: this.isBoss(),
       verb: d?.verb ?? '',
       hint: d?.hint ?? '',
       physics: d?.physics ?? null,
@@ -160,7 +196,7 @@ export class MicroRushMinigame {
   }
 
   botHint() {
-    return this.def?.physics ? { kind: this.def.physics, center: MICRO_TABLE.center } : null;
+    return this.def?.physics ? { kind: this.def.physics, center: this.world.map.center } : null;
   }
 
   dispose() {}

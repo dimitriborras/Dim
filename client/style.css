@@ -74,7 +74,9 @@ input:focus { border-color: var(--accent); }
 #feed .item { background: var(--panel); border-radius: 10px; padding: 4px 10px; font-size: 13px; animation: slidein .2s ease-out; }
 @keyframes slidein { from { transform: translateX(30px); opacity: 0; } }
 
-#contract { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); background: #3b2a66; border: 2px solid #8f6cff; border-radius: 12px; padding: 6px 12px; font-size: 13px; font-weight: 700; pointer-events: none; }
+#contract { position: absolute; top: 56px; bottom: auto; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(92vw, 520px); height: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #3b2a66; border: 2px solid #8f6cff; border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 700; pointer-events: none; }
+#contract.compact { font-size: 12px; padding: 3px 10px; opacity: .9; }
+body.race-on #contract { top: 84px; }
 #contract.done { background: #1f5a3a; border-color: var(--good); }
 #minihud { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); pointer-events: none; width: min(560px, 70vw); }
 .race-bar { position: relative; height: 16px; background: rgba(0,0,0,.4); border-radius: 999px; border: 1px solid var(--line); }
@@ -209,7 +211,7 @@ body.settings-open #feed { display: none; }
 /* ---------- Téléphone en vertical ---------- */
 body.portrait #topbar { left: auto; right: 44px; transform: none; flex-direction: column; align-items: flex-end; gap: 3px; }
 body.portrait #feed { top: auto; bottom: 110px; left: 50%; right: auto; transform: translateX(-50%); width: min(300px, 86vw); }
-body.portrait #contract { top: auto; bottom: 96px; }
+body.portrait #contract { top: calc(112px + env(safe-area-inset-top, 0px)); bottom: auto; }
 body.portrait #minihud { top: 70px; width: 86vw; }
 body.portrait #bottom { width: calc(100vw - 20px); justify-content: space-between; }
 body.portrait .item-btn { width: 82px; height: 82px; }
@@ -265,6 +267,42 @@ body.micro-phys #micro .m-verb { font-size: clamp(22px, 6vw, 40px); }
 .m-wind .bg { stroke: rgba(255,255,255,.15); }
 .m-wind .fg { stroke: var(--accent); stroke-linecap: round; stroke-dasharray: 0 100; }
 .m-key { position: absolute; left: 50%; top: 50%; font-size: 80px; transform: translate(-50%, -50%); }
+/* Capacité sollicitée, niveau et boss : annoncés avec le mot d'ordre. */
+.m-skill { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; font-weight: 900; font-size: 14px; }
+.m-skill span { padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.12); }
+.m-skill .lvl { color: var(--accent); letter-spacing: 2px; }
+.m-skill .boss { background: var(--accent); color: #2a2100; animation: mpop .45s .2s cubic-bezier(.2,1.7,.4,1) both; }
+body.micro-phys #micro .m-skill { display: none; }
+.m-calc { color: #fff; }
+.m-col { grid-template-columns: 1fr; }
+.m-grid2 { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.m-emoji { min-height: min(22vh, 130px); font-size: clamp(48px, 14vw, 80px); background: #2c2550; }
+.m-moles { width: min(100%, 380px); display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.m-hole { aspect-ratio: 1; border: 0; border-radius: 50%; background: radial-gradient(circle at 50% 70%, #1a0f08 45%, #5a3a1c 47%, #7a5230 70%); font-size: clamp(36px, 11vw, 56px); overflow: hidden; cursor: pointer; }
+.m-hole span { display: inline-block; transform: translateY(70%); transition: transform .08s; }
+.m-hole.up span { transform: none; }
+.m-hole.whack { animation: whack .2s; }
+@keyframes whack { 50% { transform: scale(.88); } }
+.m-cups { position: relative; width: min(100%, 360px); height: 150px; display: flex; justify-content: center; align-items: flex-end; }
+.m-cup { position: absolute; bottom: 0; left: calc(50% - 50px); width: 100px; height: 130px; border: 0; background: none; cursor: pointer; }
+.m-cup .cup { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; font-size: 84px; line-height: 1; transition: transform .15s; }
+.m-cup .ball { position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); font-size: 30px; }
+.m-simon { width: min(100%, 320px); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.m-pad { aspect-ratio: 1; border: 0; border-radius: 22px; background: var(--c); filter: brightness(.45) saturate(.7); cursor: pointer; transition: filter .08s, transform .08s; }
+.m-pad.show, .m-pad.lit { filter: none; transform: scale(1.05); box-shadow: 0 0 30px var(--c); }
+.m-pad.lit { animation: padlit .25s forwards; }
+@keyframes padlit { to { filter: brightness(.45) saturate(.7); transform: none; box-shadow: none; } }
+.m-dots { display: flex; gap: 8px; }
+.m-dots i { width: 14px; height: 14px; border-radius: 50%; background: rgba(255,255,255,.2); }
+.m-dots i.on { background: var(--good); }
+.m-piles { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.m-pile { position: relative; height: min(42vh, 280px); border: 0; border-radius: 20px; background: rgba(255,255,255,.08); cursor: pointer; }
+.m-pile span { position: absolute; transform: translate(-50%, -50%); font-size: clamp(20px, 6vw, 30px); pointer-events: none; }
+.m-pile.picked { outline: 4px solid var(--accent); }
+.m-aimbox { position: relative; width: min(100%, 460px); aspect-ratio: 4 / 3; border-radius: 20px; background: repeating-linear-gradient(45deg, rgba(255,255,255,.05) 0 14px, rgba(255,255,255,.09) 14px 28px); overflow: hidden; cursor: crosshair; }
+.m-target { position: absolute; transform: translate(-50%, -50%); font-size: clamp(40px, 11vw, 60px); pointer-events: none; }
+.m-target.hit { animation: mpop .3s both; filter: drop-shadow(0 0 12px var(--good)); }
+.m-shot { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(0,0,0,.5); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .m-verb.pop, .stamp { animation: none; } }
 body.micro-on #bottom, body.micro-on #feed, body.micro-on #timer, body.micro-on #contract { display: none; }
 #micro[data-phase="result"] .m-stage, #micro[data-phase="announce"] .m-stage { display: none; }

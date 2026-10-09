@@ -42,6 +42,11 @@ export class BotBrain {
   launch(p, world, goal) {
     const d = dist(p, goal);
     const base = Math.atan2(goal.y - p.y, goal.x - p.x);
+    // Tomber est le but (le trou du mini-golf) : pas de vérification de sécurité.
+    if (goal.free) {
+      p.pendingFlick = { a: base, p: Math.max(0.05, goal.power ?? Math.min(1, powerForDistance(d))) };
+      return;
+    }
     if (d < 110 && !goal.push) {
       if (this.safe(p, world, base, 0, { hop: true })) p.pendingFlick = { a: base, p: 0, hop: true };
       return;
@@ -84,6 +89,11 @@ export class BotBrain {
     const c = hint.center;
     const dc = dist(p, c);
     if (hint.kind === 'circle') return dc > 45 ? { x: c.x, y: c.y } : null;
+    // Mini-golf : droit sur le trou (s'il est visible), avec un dosage un peu généreux.
+    if (hint.kind === 'golf') {
+      if (!world.lineOfSight(p, c)) return this.rng.next() < 0.5 ? { x: c.x, y: p.y < c.y ? 190 : 510, free: true } : null;
+      return { x: c.x, y: c.y, exact: true, free: true, power: Math.min(1, powerForDistance(dc + 30) + this.rng.range(-0.05, 0.08) * (1.4 - this.skill)) };
+    }
     const target = this.nearestEnemy(p, world, 300);
     if (target && this.rng.next() < 0.6) return { x: target.x, y: target.y, push: true };
     return dc > 120 ? { x: c.x, y: c.y } : null;

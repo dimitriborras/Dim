@@ -126,15 +126,27 @@ export class MatchManager {
     }
     this.rounds = rounds;
     this.round = 1;
-    this.plan = this.registry.plan(rounds, this.rng);
-    // La Rafale ouvre la partie : des gestes simples, idéal pour découvrir le jeu.
-    const mi = this.plan.indexOf('micro');
-    if (mi > 0) [this.plan[0], this.plan[mi]] = [this.plan[mi], this.plan[0]];
-    else if (mi < 0 && this.registry.get('micro')) this.plan[0] = 'micro';
+    this.plan = this.matchPlan(rounds);
+    this.microMemory = new Set();
     this.lastResults = null;
     this.standings = null;
     this.enterIntro();
     return true;
+  }
+
+  // Séquence du match : La Rafale (gestes simples, idéale pour découvrir) ouvre la partie,
+  // puis on alterne avec les mini-jeux à la physique de palet, sans répéter le même deux fois.
+  matchPlan(rounds) {
+    if (!this.registry.get('micro')) return this.registry.plan(rounds, this.rng);
+    const physical = this.registry.list().map((m) => m.id).filter((id) => id !== 'micro');
+    const plan = [];
+    let bag = [];
+    for (let i = 0; i < rounds; i++) {
+      if (i % 2 === 0 || !physical.length) { plan.push('micro'); continue; }
+      if (!bag.length) bag = this.rng.shuffle(physical);
+      plan.push(bag.shift());
+    }
+    return plan;
   }
 
   // ------------------------------------------------------------ mini-jeux
@@ -148,6 +160,7 @@ export class MatchManager {
       rng: this.rng,
       time: this.time,
       createWorld: (opts) => this.createWorld(opts),
+      memory: this.microMemory, // micro-jeux déjà joués dans ce match
     });
     for (const p of this.participants()) InventorySystem.refresh(p.inv);
     this.minigame = mg;

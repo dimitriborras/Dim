@@ -64,7 +64,12 @@ export function parseClientMessage(raw) {
     case 'mg': {
       // Geste de micro-jeu : tape, choix (index), rotation (tours), avec l'instant estimé côté client.
       if (!['tap', 'choice', 'wind'].includes(msg.k)) return null;
-      return { t: 'mg', k: msg.k, v: num(msg.v, -10, 10) ?? 0, at: num(msg.at, 0, 1e9) };
+      const out = { t: 'mg', k: msg.k, v: num(msg.v, -10, 10) ?? 0, at: num(msg.at, 0, 1e9) };
+      // Position normalisée (0..1) du doigt, pour les micro-jeux de visée.
+      const x = num(msg.x, 0, 1);
+      const y = num(msg.y, 0, 1);
+      if (x !== null && y !== null) { out.x = x; out.y = y; }
+      return out;
     }
     default:
       return null;

@@ -306,9 +306,18 @@ export class Hud {
     el.hidden = !c;
     if (!c) return;
     el.classList.toggle('done', c.done);
-    el.textContent = c.done
-      ? `✅ Contrat rempli : +${c.reward} crédits`
-      : `📜 Contrat de rattrapage : ${c.label} (${Math.floor(c.progress)}/${c.goal}) → +${c.reward} 💰`;
+    // Une ligne au début, puis une petite pastille (le détail reste au survol).
+    const key = `${c.kind}|${c.label}`;
+    if (key !== this.contractKey) { this.contractKey = key; this.contractShownAt = performance.now(); }
+    const compact = performance.now() - this.contractShownAt > 5000;
+    el.classList.toggle('compact', compact && !c.done);
+    el.title = `Contrat de rattrapage : ${c.label} → +${c.reward} crédits`;
+    const text = c.done
+      ? `✅ Contrat rempli : +${c.reward} 💰`
+      : compact
+        ? `📜 ${Math.floor(c.progress)}/${c.goal} → +${c.reward} 💰`
+        : `📜 ${c.label} (${Math.floor(c.progress)}/${c.goal}) → +${c.reward} 💰`;
+    if (el.textContent !== text) el.textContent = text;
   }
 
   renderMiniHud(m) {
@@ -322,7 +331,7 @@ export class Hud {
     } else if (el.innerHTML) {
       el.innerHTML = '';
     }
-    $('#contract').style.top = m.hud?.kind === 'race' ? '84px' : '56px';
+    document.body.classList.toggle('race-on', m.hud?.kind === 'race');
   }
 
   renderFeed() {

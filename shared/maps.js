@@ -132,7 +132,40 @@ export const MICRO_TABLE = {
   center: { x: 450, y: 350 },
 };
 
-export const MAPS = { arena: ARENA, race: RACE_TRACK, micro: MICRO_TABLE };
+// Green de mini-golf (micro-jeu « MINI-GOLF ! ») : petit billard fermé, un seul trou,
+// un cube de craie au milieu pour obliger à jouer la bande.
+const GREEN = { x: 150, y: 150, w: 600, h: 400 };
+export const MICRO_GOLF = {
+  id: 'golf',
+  name: 'Le green',
+  theme: 'pool',
+  width: 900,
+  height: 700,
+  follow: false,
+  compact: true,
+  felt: GREEN,
+  platforms: [GREEN],
+  holes: [],
+  pockets: [{ x: 655, y: 350, r: 36 }],
+  movingPlatforms: [],
+  walls: [
+    { x: GREEN.x - 40, y: GREEN.y - 40, w: GREEN.w + 80, h: 40, style: 'rail' },
+    { x: GREEN.x - 40, y: GREEN.y + GREEN.h, w: GREEN.w + 80, h: 40, style: 'rail' },
+    { x: GREEN.x - 40, y: GREEN.y, w: 40, h: GREEN.h, style: 'rail' },
+    { x: GREEN.x + GREEN.w, y: GREEN.y, w: 40, h: GREEN.h, style: 'rail' },
+    { x: 452, y: 318, w: 46, h: 64, style: 'chalk' },
+  ],
+  bumpers: [],
+  springs: [],
+  hazardEdges: false,
+  spawns: [
+    { x: 215, y: 350 }, { x: 215, y: 270 }, { x: 215, y: 430 }, { x: 275, y: 310 },
+    { x: 275, y: 390 }, { x: 215, y: 195 }, { x: 215, y: 505 }, { x: 275, y: 230 },
+  ],
+  center: { x: 655, y: 350 },
+};
+
+export const MAPS = { arena: ARENA, race: RACE_TRACK, micro: MICRO_TABLE, golf: MICRO_GOLF };
 
 // La poche dans laquelle se trouve ce point, ou null.
 export function pocketAt(map, x, y) {

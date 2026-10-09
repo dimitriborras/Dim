@@ -95,12 +95,27 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
 `résultats + boutique sûre (8 s)` → `combat (35 s)` → `derniers achats (7 s)` → … → `finale (75 s)` →
 `classement final (15 s)` → retour au lobby.
 
-- **La Rafale (micro-jeux à la WarioWare)** : 10 micro-jeux de quelques secondes joués par tous en même temps,
-  qui accélèrent tous les trois ; chaque réussite rapporte un point. Physique simple : *Gonfle !* (taper vite),
-  *Dégaine !* (réflexe sans faux départ), *Couleur !* (couleur de l'encre, pas le mot), *Compte !* (mémoire),
-  *Emboîte !* (bon moment), *Remonte !* (tourner du doigt). Physique de palet : *Dans le cercle !*,
-  *Reste sur la table !*. Les gestes de réflexe sont horodatés à l'heure du serveur pour rester équitables
-  malgré le ping. Ajouter un micro-jeu = ajouter une définition dans `shared/game/minigames/micros.js`.
+- **Ordre des manches** : La Rafale ouvre la partie (gestes simples pour découvrir), puis on alterne
+  avec les mini-jeux à la physique de palet : Rafale, jetons ou course, Rafale, l'autre, … puis la finale.
+- **La Rafale (micro-jeux à la WarioWare)** : 10 micro-jeux de quelques secondes joués par tous en même temps.
+  Chacun sollicite une capacité, annoncée avec son niveau (★ à ★★★) :
+  - ⚡ réflexe : *Dégaine !*, *Tape les taupes !* (jamais la bombe) ;
+  - 💪 vitesse : *Gonfle !*, *Remonte !* ;
+  - 👓 lecture : *Couleur !* ;
+  - 👁️ observation : *Compte !*, *L'intrus !*, *Le plus gros tas !*, *Suis la bille !* (bonneteau) ;
+  - ⏱️ timing : *Emboîte !* ;
+  - 🧠 mémoire : *Répète !* (suite de couleurs) ;
+  - 🔢 calcul : *Calcule !* ;
+  - 🎯 précision : *Vise !* (cible qui bouge, trois essais) ;
+  - 🗣️ langage : *Orthographe !* ;
+  - 🎱 physique de palet : *Dans le cercle !*, *Reste sur la table !*, *Mini-golf !*.
+
+  La séquence est construite pour rester lisible : échauffement en niveau 1, montée en difficulté,
+  jamais deux fois de suite la même capacité, pauses « palet » aux manches 4 et 7, et un **boss** physique
+  en dernier (plus long, 2 points). Le rythme accélère tous les trois micro-jeux. Les micro-jeux déjà
+  joués dans le match sont évités à la Rafale suivante. Les gestes de réflexe sont horodatés à l'heure
+  du serveur pour rester équitables malgré le ping. Ajouter un micro-jeu = ajouter une définition
+  (avec `skill` et `level`) dans `shared/game/minigames/micros.js`.
 - **Mini-jeux** : *Course sur le tapis* (circuit avec trous, ressorts, plateforme mobile ; le pistolet repousse
   sans blesser) et *Ruée sur les jetons* (un tir fait lâcher un jeton). **Finale** : *La couronne*
   (temps de possession, tout l'arsenal autorisé).

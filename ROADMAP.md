@@ -56,9 +56,11 @@ On avance par étapes. Chaque étape doit laisser le jeu jouable et être testé
    mis en cache et résolution adaptative. Reste à faire : boutique en 3 cartes, arènes pensées pour le vertical.
 3 bis. **Le billard** *(fait)* : l'arène principale devient une table de billard à six poches ; lobby en billard
    libre avec score d'empochés ; vue pivotée en vertical ; boules mobiles et carambolages ; points pour les gros chocs.
-4. **Micro-jeux à la WarioWare** *(premier lot fait : 8 micro-jeux dans « La Rafale »)* : rafales de micro-jeux de 4 secondes à un seul geste, avec soit une physique simple
-   (réflexe, mots, choix), soit la physique de palet (Remonte !, Fige-toi !,
-   Pichenette !, Emboîte !, Gonfle !, Range !, Chut !, Attrape !) qui accélèrent, avec des piles en guise de vies.
+4. **Micro-jeux à la WarioWare** *(fait : 17 micro-jeux dans « La Rafale »)* : rafales de 10 micro-jeux à un
+   seul geste, chacun lié à une capacité (réflexe, vitesse, lecture, observation, timing, mémoire, calcul,
+   précision, langage, physique de palet). Séquence cohérente : échauffement, montée en niveau, capacités
+   alternées, pauses « palet », boss final (mini-golf). Le match alterne Rafale et mini-jeux de palet.
+   À venir : micro-jeux à deux (duel), à bluff, et au micro du téléphone (souffler).
 5. **Personnage et humour** : chapeaux et accessoires de figurine, émotes et messages rapides, chutes
    comiques, voix « plastique », récompenses de fin de partie (« Plus grosse chute », « Roi de la banane »).
 6. **Mini-jeux** (objectif 8 et plus, en variant compétition, coopération et bluff) : patate chaude,

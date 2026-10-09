@@ -557,6 +557,7 @@ export class World {
         // Empochée : la figurine file au fond de la poche.
         p.vx = (pk.x - p.x) * 6;
         p.vy = (pk.y - p.y) * 6;
+        p.holed = true;
         this.emit('pocket', { id: p.id, x: pk.x, y: pk.y, by: this.time - p.lastHitAt <= PLAYER.killCreditWindow ? p.lastHitBy : null });
       }
       CombatSystem.startFall(this, p);
@@ -727,7 +728,7 @@ export function resetBody(p, pos) {
     hp: PLAYER.maxHp, state: 'alive', fallUntil: 0, respawnAt: 0,
     invulnUntil: 0, flingUntil: 0, toppleUntil: 0, pendingFlick: null, energy: PLAYER.energyMax, settled: true, slowUntil: 0, slipUntil: 0,
     airborneUntil: 0, bubbleUntil: 0, lastHitBy: null, lastHitAt: -99,
-    moveAngle: null, speedFactor: 1,
+    moveAngle: null, speedFactor: 1, holed: false,
   });
   p.actions.length = 0;
 }

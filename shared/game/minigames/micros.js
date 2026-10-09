@@ -16,6 +16,20 @@
 
 const plausible = (at, now) => Number.isFinite(at) && Math.abs(at - now) < 0.6;
 
+// Capacités sollicitées : la rafale les alterne pour varier les plaisirs.
+export const SKILLS = {
+  reflex: { label: 'Réflexe', icon: '⚡' },
+  speed: { label: 'Vitesse', icon: '💪' },
+  reading: { label: 'Lecture', icon: '👓' },
+  observation: { label: 'Observation', icon: '👁️' },
+  timing: { label: 'Timing', icon: '⏱️' },
+  memory: { label: 'Mémoire', icon: '🧠' },
+  math: { label: 'Calcul', icon: '🔢' },
+  precision: { label: 'Précision', icon: '🎯' },
+  language: { label: 'Langage', icon: '🗣️' },
+  physics: { label: 'Physique', icon: '🎱' },
+};
+
 function perPlayer(init) {
   const m = new Map();
   return (p) => {
@@ -34,6 +48,8 @@ const COLORS = [
 export const MICROS = [
   {
     id: 'pump',
+    skill: 'speed',
+    level: 1,
     verb: 'GONFLE !',
     hint: 'Tape vite, vite, vite !',
     create({ speed }) {
@@ -57,6 +73,8 @@ export const MICROS = [
   },
   {
     id: 'draw',
+    skill: 'reflex',
+    level: 1,
     verb: 'DÉGAINE !',
     hint: 'Attends le signal… puis tape ! Pas de faux départ.',
     create({ rng, speed, start }) {
@@ -84,6 +102,8 @@ export const MICROS = [
   },
   {
     id: 'stroop',
+    skill: 'reading',
+    level: 2,
     verb: 'COULEUR !',
     hint: 'Touche la COULEUR de l\'encre, pas le mot !',
     create({ rng, speed }) {
@@ -113,6 +133,8 @@ export const MICROS = [
   },
   {
     id: 'count',
+    skill: 'observation',
+    level: 2,
     verb: 'COMPTE !',
     hint: 'Combien de canards ?',
     create({ rng, speed }) {
@@ -141,6 +163,8 @@ export const MICROS = [
   },
   {
     id: 'snap',
+    skill: 'timing',
+    level: 2,
     verb: 'EMBOÎTE !',
     hint: 'Tape quand la brique est au-dessus du trou.',
     create({ rng, speed, start }) {
@@ -169,6 +193,8 @@ export const MICROS = [
   },
   {
     id: 'wind',
+    skill: 'speed',
+    level: 1,
     verb: 'REMONTE !',
     hint: 'Fais tourner la clé avec ton doigt.',
     create({ speed }) {
@@ -193,6 +219,8 @@ export const MICROS = [
   },
   {
     id: 'circle',
+    skill: 'physics',
+    level: 2,
     verb: 'DANS LE CERCLE !',
     hint: 'Finis ta glissade dans la cible (et pousse les autres dehors).',
     physics: 'circle',
@@ -212,6 +240,8 @@ export const MICROS = [
   },
   {
     id: 'survive',
+    skill: 'physics',
+    level: 2,
     verb: 'RESTE SUR LA TABLE !',
     hint: 'Ne tombe pas. Pousse les autres.',
     physics: 'survive',
@@ -223,6 +253,296 @@ export const MICROS = [
         bot() { return null; },
         progress() { return {}; },
         won(p) { return p.state === 'alive'; },
+      };
+    },
+  },
+  {
+    id: 'moles',
+    skill: 'reflex',
+    level: 2,
+    verb: 'TAPE LES TAUPES !',
+    hint: 'Tape 3 taupes 🐹… mais jamais une bombe 💣 !',
+    create({ rng, speed, start }) {
+      const duration = 4.6 / Math.sqrt(speed);
+      const need = 3;
+      // Apparitions planifiées : trou (0 à 8), début, fin, bombe ou non.
+      const pops = [];
+      let t = start + 0.35;
+      while (t < start + duration - 0.35) {
+        const life = rng.range(0.55, 0.85) / Math.sqrt(speed);
+        pops.push({ hole: rng.int(0, 8), from: t, to: t + life, bomb: rng.next() < 0.3 });
+        t += rng.range(0.28, 0.45) / Math.sqrt(speed);
+      }
+      const at = (hole, time) => pops.find((p) => p.hole === hole && time >= p.from && time <= p.to) ?? null;
+      const st = perPlayer(() => ({ hits: new Set(), bomb: false }));
+      return {
+        duration,
+        data: { pops },
+        input(p, msg, now) {
+          if (msg.k !== 'choice') return;
+          const time = plausible(msg.at, now) ? msg.at : now;
+          const pop = at(Math.round(msg.v), time);
+          if (!pop) return;
+          if (pop.bomb) st(p).bomb = true;
+          else st(p).hits.add(pops.indexOf(pop));
+        },
+        bot(p, now, rng, skill) {
+          if (st(p).hits.size >= need || rng.next() > 0.25) return null;
+          const visible = pops.filter((x) => now >= x.from + 0.25 - skill * 0.1 && now <= x.to);
+          const pick = visible[Math.floor(rng.next() * visible.length)];
+          if (!pick || (pick.bomb && rng.next() > 0.08)) return null;
+          return { k: 'choice', v: pick.hole, at: now };
+        },
+        progress(p) { return { hits: st(p).hits.size, bomb: st(p).bomb }; },
+        won(p) { return st(p).hits.size >= need && !st(p).bomb; },
+      };
+    },
+  },
+  {
+    id: 'calc',
+    skill: 'math',
+    level: 2,
+    verb: 'CALCULE !',
+    hint: 'Vite, le bon résultat !',
+    create({ rng, speed }) {
+      const hard = speed > 1.3;
+      let a; let b; let op; let res;
+      if (hard && rng.next() < 0.5) { a = rng.int(2, 9); b = rng.int(2, 9); op = '×'; res = a * b; }
+      else if (rng.next() < 0.5) { b = rng.int(2, 9); a = b + rng.int(2, 12); op = '−'; res = a - b; }
+      else { a = rng.int(3, 15); b = rng.int(2, 12); op = '+'; res = a + b; }
+      const wrong = new Set();
+      while (wrong.size < 2) { const w = res + rng.int(-3, 3); if (w !== res && w >= 0) wrong.add(w); }
+      const options = rng.shuffle([res, ...wrong]);
+      const st = perPlayer(() => ({ choice: null }));
+      return {
+        duration: 4.2 / speed,
+        data: { text: `${a} ${op} ${b}`, options },
+        input(p, msg) { if (msg.k === 'choice' && st(p).choice === null) st(p).choice = options[Math.round(msg.v)] ?? -1; },
+        bot(p, now, rng, skill) {
+          if (st(p).choice !== null || rng.next() > 0.04) return null;
+          const right = options.indexOf(res);
+          return { k: 'choice', v: rng.next() < 0.4 + skill * 0.45 ? right : (right + 1) % 3 };
+        },
+        progress(p) { return { choice: st(p).choice }; },
+        won(p) { return st(p).choice === res; },
+      };
+    },
+  },
+  {
+    id: 'intrus',
+    skill: 'observation',
+    level: 1,
+    verb: "L'INTRUS !",
+    hint: "Touche celui qui n'a rien à faire là.",
+    create({ rng, speed }) {
+      const families = [
+        ['🍎', '🍐', '🍌', '🍇', '🍓', '🍒'], ['🚗', '🚌', '🚲', '🚜', '🚒', '🛵'], ['🐶', '🐱', '🐭', '🐰', '🦊', '🐻'],
+        ['⚽', '🏀', '🎾', '🏈', '🏐', '🎱'], ['🎸', '🎺', '🥁', '🎻', '🎷', '🪗'], ['🌵', '🌲', '🌴', '🌻', '🌷', '🍄'],
+      ];
+      const fi = rng.int(0, families.length - 1);
+      let oi = rng.int(0, families.length - 2);
+      if (oi >= fi) oi += 1;
+      const same = rng.shuffle(families[fi]).slice(0, 3);
+      const odd = rng.pick(families[oi]);
+      const items = rng.shuffle([...same, odd]);
+      const st = perPlayer(() => ({ choice: null }));
+      return {
+        duration: 3.6 / speed,
+        data: { items },
+        input(p, msg) { if (msg.k === 'choice' && st(p).choice === null) st(p).choice = items[Math.round(msg.v)] ?? null; },
+        bot(p, now, rng, skill) {
+          if (st(p).choice !== null || rng.next() > 0.05) return null;
+          const right = items.indexOf(odd);
+          return { k: 'choice', v: rng.next() < 0.5 + skill * 0.4 ? right : (right + 1) % 4 };
+        },
+        progress(p) { return { choice: st(p).choice }; },
+        won(p) { return st(p).choice === odd; },
+      };
+    },
+  },
+  {
+    id: 'cups',
+    skill: 'observation',
+    level: 3,
+    verb: 'SUIS LA BILLE !',
+    hint: 'Garde l\'œil sur le gobelet qui cache la bille.',
+    create({ rng, speed, start }) {
+      const reveal = 0.9;
+      const swapTime = 0.42 / speed;
+      const n = 3 + Math.round(speed * 1.5);
+      const swaps = Array.from({ length: n }, () => { const a = rng.int(0, 2); return [a, (a + rng.int(1, 2)) % 3]; });
+      // Chaque gobelet garde son identité ; on suit la position de celui qui cache la bille.
+      const ball = rng.int(0, 2);
+      const pos = [0, 1, 2]; // pos[gobelet] = emplacement
+      for (const [a, b] of swaps) {
+        const ca = pos.indexOf(a);
+        const cb = pos.indexOf(b);
+        pos[ca] = b;
+        pos[cb] = a;
+      }
+      const answer = pos[ball]; // emplacement final de la bille
+      const shuffleEnd = start + reveal + n * swapTime;
+      const st = perPlayer(() => ({ choice: null }));
+      return {
+        duration: reveal + n * swapTime + 2.2,
+        data: { start, reveal, swapTime, swaps, ball },
+        input(p, msg, now) {
+          if (msg.k !== 'choice' || st(p).choice !== null || now < shuffleEnd - 0.1) return;
+          st(p).choice = Math.round(msg.v);
+        },
+        bot(p, now, rng, skill) {
+          if (st(p).choice !== null || now < shuffleEnd + 0.3 || rng.next() > 0.06) return null;
+          return { k: 'choice', v: rng.next() < 0.3 + skill * 0.5 ? answer : (answer + 1 + rng.int(0, 1)) % 3 };
+        },
+        progress(p) { return { choice: st(p).choice }; },
+        won(p) { return st(p).choice === answer; },
+      };
+    },
+  },
+  {
+    id: 'simon',
+    skill: 'memory',
+    level: 3,
+    verb: 'RÉPÈTE !',
+    hint: 'Retiens la suite de couleurs, puis rejoue-la.',
+    create({ rng, speed, start }) {
+      const len = speed > 1.3 ? 4 : 3;
+      const step = 0.55 / Math.sqrt(speed);
+      const seq = Array.from({ length: len }, () => rng.int(0, 3));
+      const showEnd = start + 0.4 + len * step;
+      const st = perPlayer(() => ({ i: 0, failed: false }));
+      return {
+        duration: 0.4 + len * step + 2.6,
+        data: { seq, start, step },
+        input(p, msg, now) {
+          const s = st(p);
+          if (msg.k !== 'choice' || s.failed || s.i >= len || now < showEnd - 0.1) return;
+          if (Math.round(msg.v) === seq[s.i]) s.i += 1;
+          else s.failed = true;
+        },
+        bot(p, now, rng, skill) {
+          const s = st(p);
+          if (s.failed || s.i >= len || now < showEnd + 0.3 || rng.next() > 0.3) return null;
+          return { k: 'choice', v: rng.next() < 0.75 + skill * 0.2 ? seq[s.i] : (seq[s.i] + 1) % 4 };
+        },
+        progress(p) { return { i: st(p).i, failed: st(p).failed }; },
+        won(p) { return !st(p).failed && st(p).i >= len; },
+      };
+    },
+  },
+  {
+    id: 'bigger',
+    skill: 'observation',
+    level: 1,
+    verb: 'LE PLUS GROS TAS !',
+    hint: 'Où y a-t-il le plus de bonbons ? Pas le temps de compter !',
+    create({ rng, speed }) {
+      const a = rng.int(9, 22);
+      let b = a + (rng.next() < 0.5 ? 1 : -1) * rng.int(3, 7);
+      b = Math.max(4, b);
+      const dots = (n) => Array.from({ length: n }, () => [rng.range(0.08, 0.92), rng.range(0.1, 0.9)]);
+      const piles = [dots(a), dots(b)];
+      const answer = a > b ? 0 : 1;
+      const st = perPlayer(() => ({ choice: null }));
+      return {
+        duration: 2.8 / speed,
+        data: { piles, emoji: '🍬' },
+        input(p, msg) { if (msg.k === 'choice' && st(p).choice === null) st(p).choice = Math.round(msg.v); },
+        bot(p, now, rng, skill) {
+          if (st(p).choice !== null || rng.next() > 0.07) return null;
+          return { k: 'choice', v: rng.next() < 0.5 + skill * 0.45 ? answer : 1 - answer };
+        },
+        progress(p) { return { choice: st(p).choice }; },
+        won(p) { return st(p).choice === answer; },
+      };
+    },
+  },
+  {
+    id: 'aim',
+    skill: 'precision',
+    level: 2,
+    verb: 'VISE !',
+    hint: 'Touche la cible qui bouge. Trois essais.',
+    create({ rng, speed, start }) {
+      const p1 = rng.range(1.6, 2.2) / speed;
+      const p2 = rng.range(1.1, 1.6) / speed;
+      const f1 = rng.range(0, 6.28);
+      const f2 = rng.range(0, 6.28);
+      const r = 0.1;
+      const pos = (t) => ({
+        x: 0.5 + 0.38 * Math.sin(((t - start) / p1) * Math.PI * 2 + f1),
+        y: 0.5 + 0.34 * Math.sin(((t - start) / p2) * Math.PI * 2 + f2),
+      });
+      const st = perPlayer(() => ({ tries: 0, hit: false }));
+      return {
+        duration: 4 / Math.sqrt(speed),
+        data: { start, p1, p2, f1, f2, r },
+        input(p, msg, now) {
+          const s = st(p);
+          if (msg.k !== 'tap' || s.hit || s.tries >= 3 || !Number.isFinite(msg.x) || !Number.isFinite(msg.y)) return;
+          s.tries += 1;
+          const q = pos(plausible(msg.at, now) ? msg.at : now);
+          // Un peu de tolérance : le doigt cache la cible.
+          if (Math.hypot(q.x - msg.x, (q.y - msg.y) * 0.75) < r * 1.3) s.hit = true;
+        },
+        bot(p, now, rng, skill) {
+          const s = st(p);
+          if (s.hit || s.tries >= 3 || rng.next() > 0.08) return null;
+          const q = pos(now);
+          const err = (1.2 - skill) * 0.12;
+          return { k: 'tap', x: q.x + rng.range(-err, err), y: q.y + rng.range(-err, err), at: now };
+        },
+        progress(p) { return { tries: st(p).tries, hit: st(p).hit }; },
+        won(p) { return st(p).hit; },
+      };
+    },
+  },
+  {
+    id: 'spell',
+    skill: 'language',
+    level: 2,
+    verb: 'ORTHOGRAPHE !',
+    hint: 'Choisis le mot bien écrit.',
+    create({ rng, speed }) {
+      const WORDS = [
+        ['🐘', 'ÉLÉPHANT', 'ÉLÉFANT', 'ÉLÉPHAN'], ['🦒', 'GIRAFE', 'GIRAFFE', 'GIRRAFE'], ['🐊', 'CROCODILE', 'CROCCODILE', 'CROQUODILE'],
+        ['🦛', 'HIPPOPOTAME', 'HIPOPOTAME', 'HIPPOPOTTAME'], ['🦋', 'PAPILLON', 'PAPILION', 'PAPPILLON'], ['🐌', 'ESCARGOT', 'ESCARGO', 'ESKARGOT'],
+        ['🍄', 'CHAMPIGNON', 'CHAMPIGNION', 'CHANPIGNON'], ['☂️', 'PARAPLUIE', 'PARAPLUI', 'PARRAPLUIE'], ['🦕', 'DINOSAURE', 'DINOZAURE', 'DINAUSORE'],
+        ['💻', 'ORDINATEUR', 'ORDINATEURE', 'ORDINNATEUR'], ['🐿️', 'ÉCUREUIL', 'ÉCUREUILLE', 'ÉQUUREUIL'], ['🍫', 'CHOCOLAT', 'CHOCOLA', 'CHOKOLAT'],
+      ];
+      const [emoji, right, ...bad] = rng.pick(WORDS);
+      const options = rng.shuffle([right, ...bad]);
+      const st = perPlayer(() => ({ choice: null }));
+      return {
+        duration: 4 / speed,
+        data: { emoji, options },
+        input(p, msg) { if (msg.k === 'choice' && st(p).choice === null) st(p).choice = options[Math.round(msg.v)] ?? ''; },
+        bot(p, now, rng, skill) {
+          if (st(p).choice !== null || rng.next() > 0.04) return null;
+          const i = options.indexOf(right);
+          return { k: 'choice', v: rng.next() < 0.45 + skill * 0.45 ? i : (i + 1) % 3 };
+        },
+        progress(p) { return { choice: st(p).choice }; },
+        won(p) { return st(p).choice === right; },
+      };
+    },
+  },
+  {
+    id: 'golf',
+    skill: 'physics',
+    level: 3,
+    verb: 'MINI-GOLF !',
+    hint: 'Fais tomber ta figurine dans le trou. Dose bien ta pichenette !',
+    physics: 'golf',
+    create({ speed }) {
+      return {
+        duration: 6.5 / Math.sqrt(speed),
+        data: {},
+        input() {},
+        bot() { return null; },
+        progress() { return {}; },
+        // Seule façon de « tomber » sur ce green : le trou.
+        won(p) { return p.state !== 'alive' && p.holed === true; },
       };
     },
   },

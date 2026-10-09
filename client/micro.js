@@ -2,6 +2,21 @@
 // par micro-jeu et un tampon « Réussi / Raté ». Les gestes sont envoyés au serveur avec
 // l'instant estimé côté serveur (`serverNow`) pour que les jeux de réflexe restent équitables.
 import { vibrate } from './settings.js';
+import { SKILLS } from '../shared/game/minigames/micros.js';
+
+const PADS = ['#ff4d4d', '#3d8bff', '#3ddc84', '#ffd23d'];
+// Position des gobelets après les `k` premiers échanges (pos[gobelet] = emplacement).
+function cupSlots(swaps, k) {
+  const pos = [0, 1, 2];
+  for (let i = 0; i < k && i < swaps.length; i++) {
+    const [a, b] = swaps[i];
+    const ca = pos.indexOf(a);
+    const cb = pos.indexOf(b);
+    pos[ca] = b;
+    pos[cb] = a;
+  }
+  return pos;
+}
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -18,6 +33,7 @@ export class MicroOverlay {
     this.phaseTotal = 1;
     root.innerHTML = `
       <div class="m-top"><span class="m-count"></span><span class="m-speed"></span></div>
+      <div class="m-skill"></div>
       <div class="m-verb"></div>
       <div class="m-hint"></div>
       <div class="m-stage"></div>
@@ -58,9 +74,13 @@ export class MicroOverlay {
     r.dataset.id = h.id ?? '';
     this.el('.m-count').textContent = `Micro-jeu ${h.index + 1}/${h.total}`;
     this.el('.m-speed').textContent = h.speed > 1 ? `Vitesse ×${h.speed.toFixed(1)}` : '';
+    const sk = SKILLS[h.skill];
+    const skill = this.el('.m-skill');
+    skill.innerHTML = `${sk ? `<span>${sk.icon} ${esc(sk.label)}</span>` : ''}<span class="lvl">${'★'.repeat(h.level ?? 1)}</span>${h.boss ? '<span class="boss">👑 BOSS · 2 pts</span>' : ''}`;
+    skill.hidden = h.phase === 'result';
     this.el('.m-result').innerHTML = '';
     const verb = this.el('.m-verb');
-    verb.textContent = h.verb;
+    verb.textContent = h.verb.replace(/ ([!?])/g, '\u00a0$1'); // le « ! » ne part pas seul à la ligne
     verb.classList.remove('pop');
     void verb.offsetWidth; // relance l'animation
     verb.classList.add('pop');
@@ -81,7 +101,7 @@ export class MicroOverlay {
     const mine = h.results?.[this.youId];
     const res = this.el('.m-result');
     const row = Object.entries(h.results ?? {}).map(([id, ok]) => `<span class="${ok ? 'ok' : 'ko'}" data-id="${esc(id)}">${ok ? '✔' : '✘'}</span>`).join('');
-    res.innerHTML = mine === undefined ? '' : `<div class="stamp ${mine ? 'ok' : 'ko'}">${mine ? '✔ RÉUSSI !<small>+1</small>' : '✘ RATÉ'}</div><div class="others">${row}</div>`;
+    res.innerHTML = mine === undefined ? '' : `<div class="stamp ${mine ? 'ok' : 'ko'}">${mine ? `✔ RÉUSSI !<small>+${h.boss ? 2 : 1}</small>` : '✘ RATÉ'}</div><div class="others">${row}</div>`;
     if (mine !== undefined) {
       this.tone(mine ? 'microWin' : 'microLose');
       vibrate(mine ? [20, 40, 20] : 80);
@@ -114,9 +134,39 @@ export class MicroOverlay {
       case 'wind':
         st.innerHTML = `<div class="m-wind"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" class="bg"/><circle cx="50" cy="50" r="44" class="fg" pathLength="100"/></svg><span class="m-key">🗝️</span></div><div class="m-counter">Tourne avec ton doigt</div>`;
         break;
+      case 'moles':
+        st.innerHTML = `<div class="m-counter">🐹 <b>0</b> / 3</div><div class="m-moles">${Array.from({ length: 9 }, (_, i) => `<button class="m-hole" data-hole="${i}"><span></span></button>`).join('')}</div>`;
+        break;
+      case 'calc':
+        st.innerHTML = `<div class="m-word m-calc">${esc(d.text)} = ?</div>
+          <div class="m-choices">${d.options.map((n, i) => `<button class="m-choice" data-choice="${i}">${n}</button>`).join('')}</div>`;
+        break;
+      case 'intrus':
+        st.innerHTML = `<div class="m-grid2">${d.items.map((e, i) => `<button class="m-choice m-emoji" data-choice="${i}">${e}</button>`).join('')}</div>`;
+        break;
+      case 'cups':
+        st.innerHTML = `<div class="m-cups">${[0, 1, 2].map((c) => `<button class="m-cup" data-cup="${c}"><span class="cup">🥤</span>${c === d.ball ? '<span class="ball">🔴</span>' : ''}</button>`).join('')}</div><div class="m-counter m-cups-msg">Regarde bien…</div>`;
+        break;
+      case 'simon':
+        st.innerHTML = `<div class="m-counter m-simon-msg">Regarde…</div><div class="m-simon">${PADS.map((c, i) => `<button class="m-pad" data-pad="${i}" style="--c:${c}"></button>`).join('')}</div><div class="m-dots">${d.seq.map(() => '<i></i>').join('')}</div>`;
+        break;
+      case 'bigger':
+        st.innerHTML = `<div class="m-piles">${d.piles.map((pile, i) => `<button class="m-pile" data-choice="${i}">${pile.map(([x, y]) => `<span style="left:${x * 100}%;top:${y * 100}%">${d.emoji}</span>`).join('')}</button>`).join('')}</div>`;
+        break;
+      case 'aim':
+        st.innerHTML = '<div class="m-aimbox"><span class="m-target">🎯</span></div><div class="m-counter">Essais : <b>3</b></div>';
+        break;
+      case 'spell':
+        st.innerHTML = `<div class="m-big">${esc(d.emoji)}</div>
+          <div class="m-choices m-col">${d.options.map((w, i) => `<button class="m-choice" data-choice="${i}">${esc(w)}</button>`).join('')}</div>`;
+        break;
       default:
         st.innerHTML = '';
     }
+  }
+
+  stamp() {
+    return Math.round(this.serverNow() * 1000) / 1000;
   }
 
   bindStage() {
@@ -131,6 +181,61 @@ export class MicroOverlay {
         choice.classList.add('picked');
         this.send({ t: 'mg', k: 'choice', v: this.local.choice });
         vibrate(10);
+        return;
+      }
+      const hole = e.target.closest('[data-hole]');
+      if (hole && h.id === 'moles') {
+        this.send({ t: 'mg', k: 'choice', v: Number(hole.dataset.hole), at: this.stamp() });
+        hole.classList.remove('whack');
+        void hole.offsetWidth;
+        hole.classList.add('whack');
+        this.tone('microTap');
+        vibrate(8);
+        return;
+      }
+      const pad = e.target.closest('[data-pad]');
+      if (pad && h.id === 'simon') {
+        const d = h.data;
+        if (this.serverNow() < d.start + 0.4 + d.seq.length * d.step - 0.1 || this.local.failed) return;
+        const v = Number(pad.dataset.pad);
+        this.send({ t: 'mg', k: 'choice', v });
+        const i = this.local.i ?? 0;
+        if (d.seq[i] === v) this.local.i = i + 1;
+        else this.local.failed = true;
+        pad.classList.remove('lit');
+        void pad.offsetWidth;
+        pad.classList.add('lit');
+        this.tone('microTap');
+        vibrate(8);
+        return;
+      }
+      const cup = e.target.closest('[data-cup]');
+      if (cup && h.id === 'cups') {
+        const d = h.data;
+        if (this.local.choice !== undefined || this.serverNow() < d.start + d.reveal + d.swaps.length * d.swapTime - 0.1) return;
+        this.local.choice = cupSlots(d.swaps, d.swaps.length)[Number(cup.dataset.cup)];
+        cup.classList.add('picked');
+        this.send({ t: 'mg', k: 'choice', v: this.local.choice });
+        vibrate(10);
+        return;
+      }
+      if (h.id === 'aim') {
+        const box = st.querySelector('.m-aimbox');
+        const r = box?.getBoundingClientRect();
+        if (!r || (this.local.tries ?? 0) >= 3 || this.local.hit) return;
+        const x = (e.clientX - r.left) / r.width;
+        const y = (e.clientY - r.top) / r.height;
+        if (x < 0 || x > 1 || y < 0 || y > 1) return;
+        this.local.tries = (this.local.tries ?? 0) + 1;
+        this.send({ t: 'mg', k: 'tap', v: 1, x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000, at: this.stamp() });
+        const mark = document.createElement('i');
+        mark.className = 'm-shot';
+        mark.style.left = `${x * 100}%`;
+        mark.style.top = `${y * 100}%`;
+        box.appendChild(mark);
+        this.tone('microTap');
+        vibrate(12);
+        e.preventDefault();
         return;
       }
       if (h.id === 'pump') {
@@ -236,6 +341,68 @@ export class MicroOverlay {
         if (fg) fg.style.strokeDasharray = `${Math.min(100, (turns / d.need) * 100)} 100`;
         const key = this.stage.querySelector('.m-key');
         if (key) key.style.transform = `translate(-50%, -50%) rotate(${this.local.rot ?? 0}rad)`;
+        break;
+      }
+      case 'moles': {
+        const holes = this.stage.querySelectorAll('.m-hole');
+        holes.forEach((el, i) => {
+          const pop = d.pops.find((x) => x.hole === i && now >= x.from && now <= x.to);
+          const face = pop ? (pop.bomb ? '💣' : '🐹') : '';
+          const span = el.firstChild;
+          if (span.textContent !== face) span.textContent = face;
+          el.classList.toggle('up', !!pop);
+        });
+        const c = this.stage.querySelector('.m-counter b');
+        if (c) c.textContent = you.bomb ? '💥' : you.hits ?? 0;
+        break;
+      }
+      case 'cups': {
+        const t = now - d.start;
+        const n = d.swaps.length;
+        const k = Math.max(0, Math.floor((t - d.reveal) / d.swapTime));
+        const frac = t < d.reveal ? 0 : Math.min(1, ((t - d.reveal) / d.swapTime) - k);
+        const from = cupSlots(d.swaps, Math.min(k, n));
+        const to = cupSlots(d.swaps, Math.min(k + 1, n));
+        const done = k >= n;
+        const ease = frac * frac * (3 - 2 * frac);
+        this.stage.querySelectorAll('.m-cup').forEach((el, c) => {
+          const slot = done ? from[c] : from[c] + (to[c] - from[c]) * ease;
+          const moving = !done && from[c] !== to[c];
+          const lift = t < d.reveal * 0.8 ? -46 : 0;
+          const arc = moving ? Math.sin(ease * Math.PI) * (to[c] > from[c] ? -26 : 26) : 0;
+          el.style.transform = `translate(${(slot - 1) * 105}%, ${arc}px)`;
+          const up = el.classList.contains('picked') ? -46 : lift;
+          el.querySelector('.cup').style.transform = `translateY(${up}px)`;
+          const ball = el.querySelector('.ball');
+          if (ball) ball.style.opacity = up ? 1 : 0;
+        });
+        const msg = this.stage.querySelector('.m-cups-msg');
+        const txt = done ? (this.local.choice !== undefined ? '🤞' : 'Où est la bille ?') : 'Regarde bien…';
+        if (msg && msg.textContent !== txt) msg.textContent = txt;
+        break;
+      }
+      case 'simon': {
+        const t = now - d.start - 0.4;
+        const showing = t < d.seq.length * d.step;
+        const i = Math.floor(t / d.step);
+        const lit = showing && i >= 0 && t - i * d.step < d.step * 0.7 ? d.seq[i] : -1;
+        this.stage.querySelectorAll('.m-pad').forEach((el, j) => el.classList.toggle('show', j === lit));
+        const msg = this.stage.querySelector('.m-simon-msg');
+        const done = this.local.i ?? 0;
+        const txt = showing ? 'Regarde…' : this.local.failed ? '✘ Raté !' : done >= d.seq.length ? '✔ Bravo !' : 'À toi !';
+        if (msg && msg.textContent !== txt) msg.textContent = txt;
+        this.stage.querySelectorAll('.m-dots i').forEach((el, j) => el.classList.toggle('on', j < done));
+        break;
+      }
+      case 'aim': {
+        const target = this.stage.querySelector('.m-target');
+        const x = 0.5 + 0.38 * Math.sin(((now - d.start) / d.p1) * Math.PI * 2 + d.f1);
+        const y = 0.5 + 0.34 * Math.sin(((now - d.start) / d.p2) * Math.PI * 2 + d.f2);
+        if (target && !you.hit) { target.style.left = `${x * 100}%`; target.style.top = `${y * 100}%`; }
+        if (target) target.classList.toggle('hit', !!you.hit);
+        const c = this.stage.querySelector('.m-counter b');
+        const left = you.hit ? '🎯 Touché !' : String(3 - Math.max(this.local.tries ?? 0, you.tries ?? 0));
+        if (c && c.textContent !== left) c.textContent = left;
         break;
       }
       default:
