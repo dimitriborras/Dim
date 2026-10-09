@@ -157,6 +157,7 @@ export class GameRoom {
         if (msg.a !== null) p.input.aim = msg.a;
         p.input.fire = msg.f;
         if (p.actions.length < 12) p.actions.push(...msg.act);
+        if (msg.s !== null) p.inputSeq = msg.s;
         break;
       case 'buy': {
         const res = this.match.buy(p, msg.item, msg.slot);
@@ -204,6 +205,8 @@ export class GameRoom {
   // ------------------------------------------------------------ boucle
   tick(dt) {
     if (this.closed) return;
+    // Dernière commande prise en compte par ce pas de simulation (pour la prédiction client).
+    for (const p of this.players.values()) p.ackSeq = p.inputSeq ?? 0;
     this.match.tick(dt);
     this.tickCount += 1;
     if (this.tickCount % SNAPSHOT_EVERY_TICKS === 0) this.broadcast();
@@ -253,6 +256,17 @@ export class GameRoom {
       dash: Math.max(0, (p.dashReadyAt ?? 0) - t),
       respawn: p.state === 'dead' ? Math.max(0, p.respawnAt - t) : 0,
       inMatch: p.inMatch,
+      // État physique exact du joueur, pour que son client rejoue ses commandes non confirmées.
+      body: {
+        seq: p.ackSeq ?? 0,
+        x: Math.round(p.x * 10) / 10,
+        y: Math.round(p.y * 10) / 10,
+        vx: Math.round(p.vx * 10) / 10,
+        vy: Math.round(p.vy * 10) / 10,
+        ms: p.maxSpeed ?? 0,
+        free: p.state === 'alive' && !this.match.world.rules.frozen && !p.dashUntil
+          && t >= (p.slipUntil ?? 0) && t >= (p.airborneUntil ?? 0),
+      },
     };
   }
 }

@@ -34,7 +34,8 @@ export function parseClientMessage(raw) {
       const my = num(msg.my, -1, 1) ?? 0;
       const a = num(msg.a, -10, 10);
       const act = Array.isArray(msg.act) ? msg.act.filter((x) => ACTIONS.has(x)).slice(0, 6) : [];
-      return { t: 'in', mx, my, a, f: msg.f === true || msg.f === 1, act };
+      const s = Number.isInteger(msg.s) && msg.s >= 0 ? msg.s : null;
+      return { t: 'in', mx, my, a, f: msg.f === true || msg.f === 1, act, s };
     }
     case 'buy': {
       if (typeof msg.item !== 'string' || !Object.hasOwn(ITEMS, msg.item)) return null;

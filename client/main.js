@@ -3,6 +3,7 @@ import { InputController } from './input.js';
 import { Renderer } from './render.js';
 import { Hud } from './hud.js';
 import { Sfx } from './audio.js';
+import { Predictor } from './predict.js';
 import { INTERP_DELAY_MS } from '../shared/constants.js';
 
 const $ = (s) => document.querySelector(s);
@@ -118,6 +119,7 @@ function onSnap(msg) {
   snaps.push(msg);
   if (snaps.length > 30) snaps.shift();
   latest = msg;
+  if (msg.you?.body) predictor.reconcile(msg.you.body, msg.w.map);
   const players = new Map(msg.roster.map((r) => [r.id, r]));
   for (const ev of msg.ev) {
     renderer.addEvent(ev, players);
@@ -144,7 +146,10 @@ const input = new InputController(canvas, {
 });
 
 setInterval(() => {
-  if (conn && youId) conn.send(input.sample());
+  if (!conn || !youId) return;
+  const cmd = input.sample();
+  predictor.record(cmd);
+  conn.send(cmd);
 }, 1000 / 30);
 setInterval(() => {
   if (conn instanceof OnlineConnection && youId) conn.send({ t: 'ping', c: performance.now() });
@@ -210,8 +215,13 @@ function interpolate() {
   };
 }
 
+const predictor = new Predictor();
 let currentState = null;
+let lastFrame = performance.now();
 function frame() {
+  const nowMs = performance.now();
+  const frameDt = Math.min(0.1, (nowMs - lastFrame) / 1000);
+  lastFrame = nowMs;
   requestAnimationFrame(frame);
   const st = interpolate();
   if (!st || !latest) {
@@ -220,6 +230,12 @@ function frame() {
     return;
   }
   const m = latest.m;
+  // Joueur local : position prédite et visée immédiate, sans attendre le serveur.
+  const predicted = predictor.display(frameDt);
+  st.players = st.players.map((p) => {
+    if (p.id !== youId || p.s !== 'alive') return p;
+    return predicted ? { ...p, ...predicted, a: input.aim } : { ...p, a: input.aim };
+  });
   currentState = {
     ...st,
     youId,
@@ -236,4 +252,4 @@ function frame() {
 requestAnimationFrame(frame);
 
 // Accès de débogage (console du navigateur) : plasticPanic.conn.room en mode solo.
-window.plasticPanic = { get conn() { return conn; } };
+window.plasticPanic = { get conn() { return conn; }, get state() { return currentState; } };

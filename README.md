@@ -12,6 +12,8 @@ mini-jeux, achats de gadgets et combats dans une arène commune, puis s'affronte
 3. Après 2 à 3 minutes, Render donne une adresse `https://plastic-panic-xxxx.onrender.com` :
    l'ouvrir, créer une salle et partager le lien.
 
+Le service est créé à Francfort (`region: frankfurt`) pour un ping faible depuis la France ; la région d'un
+service Render ne peut pas être changée après coup (il faut supprimer le service puis le recréer).
 Chaque push sur la branche par défaut redéploie le jeu. L'offre gratuite met le serveur en veille après
 15 minutes sans joueur : la première visite suivante prend environ une minute, et les parties en cours
 sont perdues lors de la mise en veille.
@@ -48,7 +50,7 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   `cloudflared tunnel --url http://localhost:8080`, puis partager l'adresse `https://…` obtenue
   (les WebSocket passent automatiquement en `wss`).
 - **Port déjà utilisé** : `PORT=3000 npm start` (Windows PowerShell : `$env:PORT=3000; npm start`).
-- `npm test` lance les 17 tests (économie, anti-triche, phases, réseau).
+- `npm test` lance les 18 tests (économie, anti-triche, phases, réseau).
 
 - **Créer une salle** : un code à 4 lettres et un lien à partager s'affichent (aucun compte nécessaire).
 - **Rejoindre** : code ou lien `?room=CODE`. En cas de coupure, le client se reconnecte seul
@@ -137,8 +139,9 @@ test/                            tests node:test
 - **Ajouter un mini-jeu** : une classe qui implémente `initialize / start / update / isOver / finish / hud / dispose`,
   enregistrée dans `defaultRegistry()` (`MatchManager.js`).
 - **Ajouter un objet** : une entrée dans `ITEMS` avec son `use(ctx)` ; la boutique n'a pas à être modifiée.
-- **Réseau** : 30 ticks/s, 15 instantanés/s, interpolation côté client (110 ms).
-  Il n'y a pas encore de prédiction locale.
+- **Réseau** : 30 ticks/s, 15 instantanés/s, interpolation des autres joueurs (110 ms). Le joueur local est
+  prédit (`client/predict.js`) : ses commandes sont appliquées tout de suite avec la même physique que le serveur
+  (`shared/game/movement.js`), puis rejouées à partir de chaque état confirmé. La visée est locale.
 
 ## État par rapport au plan
 
@@ -149,5 +152,5 @@ test/                            tests node:test
 - [ ] Étape 5 — À faire avec de vrais testeurs : latence et pertes réseau réelles, petits écrans,
   équilibrage des valeurs (simulation avec bots : `node --test`).
 
-Pistes suivantes : prédiction côté client pour le joueur local, réglage de la sensibilité de visée
+Pistes suivantes : réglage de la sensibilité de visée
 mobile, nouveaux mini-jeux et arènes, direction artistique et sons.

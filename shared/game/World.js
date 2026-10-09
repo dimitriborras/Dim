@@ -1,10 +1,11 @@
-import { PLAYER, HAZARD, SHOP } from '../constants.js';
+import { PLAYER, SHOP } from '../constants.js';
 import {
   pointInRect, resolveCircleRect, circleRectOverlap, segmentRectT, segmentCircleT, angleDiff, dist,
 } from '../geometry.js';
 import { movingPlatformRect } from '../maps.js';
 import { CombatSystem } from './CombatSystem.js';
 import { InventorySystem } from './InventorySystem.js';
+import { normalizeInput, inHazard, steerOnGround, collideWalls } from './movement.js';
 
 const DEFAULT_RULES = {
   damage: true,
@@ -55,13 +56,7 @@ export class World {
   }
 
   inHazard(x, y) {
-    if (!this.map.hazardEdges) return false;
-    for (const r of this.map.platforms) {
-      if (!pointInRect(x, y, r)) continue;
-      const e = Math.min(x - r.x, r.x + r.w - x, y - r.y, r.y + r.h - y);
-      return e < HAZARD.band;
-    }
-    return false;
+    return inHazard(this.map, x, y);
   }
 
   overlapsWall(x, y, radius) {
@@ -243,10 +238,7 @@ export class World {
     const input = p.input;
     if (Number.isFinite(input.aim)) p.aim = input.aim;
     const moving = Math.abs(input.mx) > 0.05 || Math.abs(input.my) > 0.05;
-    let mx = input.mx;
-    let my = input.my;
-    const ml = Math.hypot(mx, my);
-    if (ml > 1) { mx /= ml; my /= ml; }
+    const { mx, my } = normalizeInput(input.mx, input.my);
     if (moving) p.moveAngle = Math.atan2(my, mx);
 
     const frozen = this.rules.frozen;
@@ -266,6 +258,7 @@ export class World {
     if (t < p.slowUntil && t >= p.bubbleUntil) maxSp *= 0.5;
     if (busy) maxSp *= SHOP.combatMoveFactor;
     if (p.speedFactor) maxSp *= p.speedFactor;
+    p.maxSpeed = maxSp;
     const dx = frozen ? 0 : mx * maxSp;
     const dy = frozen ? 0 : my * maxSp;
     const sp = Math.hypot(p.vx, p.vy);
@@ -281,19 +274,8 @@ export class World {
     } else if (airborne) {
       p.vx += dx * 0.6 * dt;
       p.vy += dy * 0.6 * dt;
-    } else if (sp > maxSp + 1) {
-      const fr = PLAYER.knockbackFriction * (this.inHazard(p.x, p.y) ? HAZARD.frictionFactor : 1);
-      const k = Math.exp(-fr * dt);
-      p.vx = p.vx * k + dx * 2.5 * dt;
-      p.vy = p.vy * k + dy * 2.5 * dt;
     } else {
-      let ax = dx - p.vx;
-      let ay = dy - p.vy;
-      const al = Math.hypot(ax, ay);
-      const maxStep = PLAYER.accel * dt * (this.inHazard(p.x, p.y) && !moving ? 0.4 : 1);
-      if (al > maxStep) { ax *= maxStep / al; ay *= maxStep / al; }
-      p.vx += ax;
-      p.vy += ay;
+      steerOnGround(p, frozen ? 0 : mx, frozen ? 0 : my, maxSp, this.inHazard(p.x, p.y), dt);
     }
 
     // Les plateformes mobiles transportent ceux qui sont dessus.
@@ -333,17 +315,7 @@ export class World {
 
   collideStatic(p) {
     const r = PLAYER.radius;
-    for (const w of this.map.walls) {
-      const n = resolveCircleRect(p, r, w);
-      if (n) {
-        const vn = p.vx * n.nx + p.vy * n.ny;
-        if (vn < 0) {
-          const bounce = Math.hypot(p.vx, p.vy) > PLAYER.speed * 1.5 ? 1.35 : 1;
-          p.vx -= vn * n.nx * bounce;
-          p.vy -= vn * n.ny * bounce;
-        }
-      }
-    }
+    collideWalls(p, this.map.walls);
     if (this.time < p.airborneUntil) return;
     for (const b of this.map.bumpers) {
       const d = Math.hypot(p.x - b.x, p.y - b.y);
