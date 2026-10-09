@@ -50,7 +50,7 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   `cloudflared tunnel --url http://localhost:8080`, puis partager l'adresse `https://…` obtenue
   (les WebSocket passent automatiquement en `wss`).
 - **Port déjà utilisé** : `PORT=3000 npm start` (Windows PowerShell : `$env:PORT=3000; npm start`).
-- `npm test` lance les 18 tests (économie, anti-triche, phases, réseau).
+- `npm test` lance les 21 tests (économie, anti-triche, phases, réseau).
 
 - **Créer une salle** : un code à 4 lettres et un lien à partager s'affichent (aucun compte nécessaire).
 - **Rejoindre** : code ou lien `?room=CODE`. En cas de coupure, le client se reconnecte seul
@@ -58,14 +58,18 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
 - **Entraînement solo** : toute la simulation tourne dans le navigateur, avec 5 bots, sans serveur.
 - L'hôte peut ajouter ou retirer des bots et choisir 3, 5 ou 8 manches.
 
-| PC | Mobile (paysage) |
-| --- | --- |
-| ZQSD / WASD : déplacement (touches physiques, AZERTY et QWERTY) | Pouce gauche : joystick de déplacement |
-| Souris : visée, clic gauche : tir | Pouce droit : visée (pousser à fond = tir) + bouton TIR |
-| Clic droit / E : gadget | Boutons esquive, gadget, consommables |
-| Espace : esquive (recharge 4 s) | Toucher un emplacement : changer d'arme |
-| 1 2 3 : arme ou gadget, R / F : consommables | |
-| B : boutique, Tab : classement, M : son | |
+| PC (clavier / souris) | Mobile (paysage) | Manette |
+| --- | --- | --- |
+| ZQSD / WASD : déplacement | Pouce gauche : stick flottant | Stick gauche : déplacement |
+| Souris : visée, clic gauche : tir | Pouce droit : visée, tir automatique au-delà de la moitié | Stick droit : visée (tir automatique), gâchettes : tir |
+| Clic droit / E : gadget | Boutons qui affichent l'objet équipé et sa recharge | B : gadget |
+| Espace / Maj : esquive | 💨 : esquive | A : esquive |
+| Molette, 1 2 3 : armes | 🔁 : arme suivante | LB / RB : armes |
+| R / F : consommables | Icône du consommable | X / Y : consommables |
+| B : boutique, Tab : scores, M : son | ⚙️ : réglages | Start : boutique, Select : scores |
+
+Le bouton ⚙️ règle le tir automatique, l'aide à la visée (tactile et manette, jamais à la souris), les vibrations,
+le mode gaucher, l'intensité des tremblements et le volume.
 
 ## Boucle de partie
 

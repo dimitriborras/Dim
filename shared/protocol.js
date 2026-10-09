@@ -5,7 +5,7 @@ import { ITEMS } from './items.js';
 import { ROUND_OPTIONS } from './constants.js';
 
 export const MAX_MESSAGE_BYTES = 2048;
-const ACTIONS = new Set(['dash', 'gadget', 'c0', 'c1', 's0', 's1', 's2']);
+const ACTIONS = new Set(['dash', 'gadget', 'c0', 'c1', 's0', 's1', 's2', 'wn', 'wp']);
 
 const num = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null);
 

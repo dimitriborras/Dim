@@ -1,3 +1,5 @@
+import { settings } from './settings.js';
+
 // Petits sons synthétisés (aucun fichier audio) pour le retour immédiat.
 export class Sfx {
   constructor() {
@@ -25,7 +27,7 @@ export class Sfx {
     const c = this.ctx;
     const t = c.currentTime;
     const g = c.createGain();
-    g.gain.setValueAtTime(v, t);
+    g.gain.setValueAtTime(Math.max(0.0001, v * settings.volume), t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + d);
     g.connect(c.destination);
     if (noise) {
@@ -52,7 +54,11 @@ export class Sfx {
     const mine = ev.id === youId;
     switch (ev.type) {
       case 'shot': if (mine) this.tone({ f: ev.kind === 'glue' ? 220 : 660, f2: ev.kind === 'glue' ? 120 : 330, d: 0.07, v: 0.04 }); break;
-      case 'dmg': this.tone({ noise: true, d: 0.08, v: mine ? 0.12 : 0.05 }); break;
+      case 'dmg':
+        this.tone({ noise: true, d: 0.08, v: mine ? 0.12 : 0.05 });
+        if (ev.by === youId) this.tone({ f: 1400, f2: 1800, d: 0.05, type: 'square', v: 0.035 }); // confirmation de touche
+        break;
+      case 'push': if (ev.by === youId) this.tone({ f: 1200, d: 0.04, type: 'triangle', v: 0.03 }); break;
       case 'elim': this.tone({ f: 300, f2: 60, d: 0.35, type: 'sawtooth', v: 0.07 }); break;
       case 'boom': this.tone({ noise: true, d: 0.4, v: 0.14 }); break;
       case 'spring': case 'jump': this.tone({ f: 200, f2: 800, d: 0.2, type: 'sine', v: 0.08 }); break;

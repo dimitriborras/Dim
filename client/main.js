@@ -5,6 +5,8 @@ import { Hud } from './hud.js';
 import { Sfx } from './audio.js';
 import { Predictor } from './predict.js';
 import { INTERP_DELAY_MS } from '../shared/constants.js';
+import { angleDiff } from '../shared/geometry.js';
+import { settings, onSettingsChange, vibrate } from './settings.js';
 
 const $ = (s) => document.querySelector(s);
 const canvas = $('#game');
@@ -12,6 +14,9 @@ const renderer = new Renderer(canvas);
 const sfx = new Sfx();
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 if (isTouch) document.body.classList.add('touch');
+const applyBodySettings = () => document.body.classList.toggle('lefty', settings.leftHanded);
+applyBodySettings();
+onSettingsChange(applyBodySettings);
 
 let conn = null;
 let youId = null;
@@ -122,7 +127,10 @@ function onSnap(msg) {
   if (msg.you?.body) predictor.reconcile(msg.you.body, msg.w.map);
   const players = new Map(msg.roster.map((r) => [r.id, r]));
   for (const ev of msg.ev) {
-    renderer.addEvent(ev, players);
+    renderer.addEvent(ev, players, youId);
+    if (ev.type === 'dmg' && ev.id === youId) vibrate(35);
+    if (ev.type === 'elim' && ev.killer === youId) vibrate([25, 40, 60]);
+    if (ev.type === 'elim' && ev.victim === youId) vibrate(120);
     sfx.play(ev, youId);
     hud?.onEvent(ev, youId);
   }
@@ -143,11 +151,40 @@ const input = new InputController(canvas, {
     if (code === 'KeyM' && down) hud.toast(sfx.toggle() ? 'Son coupé' : 'Son activé');
     if (code === 'Tab') { showTable = down; if (latest) hud.renderFullTable(latest, showTable); }
   },
+  onPadButton: (i) => {
+    if (!hud) return;
+    if (i === 9) hud.toggleShop(); // Start
+    if (i === 8) { showTable = !showTable; if (latest) hud.renderFullTable(latest, showTable); } // Select
+  },
 });
+
+// Aide à la visée (tactile et manette uniquement) : la visée est légèrement attirée vers
+// la cible la plus proche de la direction choisie. Elle ne vise jamais à la place du joueur.
+function applyAimAssist(cmd) {
+  if (!settings.aimAssist || !input.aimAssisted || !currentState) return;
+  const me = currentState.players.find((p) => p.id === youId);
+  if (!me || me.s !== 'alive') return;
+  const targets = [
+    ...currentState.players.filter((o) => o.id !== youId && o.s === 'alive'),
+    ...currentState.decoys.filter((d) => d.owner !== youId),
+  ];
+  let best = null;
+  for (const o of targets) {
+    const dx = o.x - me.x;
+    const dy = o.y - me.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 650 || d < 1) continue;
+    const diff = angleDiff(Math.atan2(dy, dx), cmd.a);
+    const tolerance = Math.min(0.35, 0.1 + 26 / d); // plus tolérant de près
+    if (Math.abs(diff) < tolerance && (best === null || Math.abs(diff) < Math.abs(best))) best = diff;
+  }
+  if (best !== null) cmd.a = Math.round((cmd.a + best * 0.6) * 1000) / 1000;
+}
 
 setInterval(() => {
   if (!conn || !youId) return;
   const cmd = input.sample();
+  applyAimAssist(cmd);
   predictor.record(cmd);
   conn.send(cmd);
 }, 1000 / 30);
@@ -164,10 +201,13 @@ const lerpAngle = (a, b, k) => {
   return a + d * k;
 };
 
+let frozenRenderT = 0;
 function interpolate() {
   if (!snaps.length) return null;
   const now = performance.now() / 1000;
-  const renderT = now - clockOffset - INTERP_DELAY_MS / 1000;
+  // Micro-gel sur un impact décisif : l'image se fige ~80 ms, puis reprend.
+  const renderT = now < renderer.hitStopUntil ? frozenRenderT : now - clockOffset - INTERP_DELAY_MS / 1000;
+  frozenRenderT = renderT;
   let a = snaps[0];
   let b = snaps[snaps.length - 1];
   for (let i = snaps.length - 1; i > 0; i--) {
@@ -216,6 +256,12 @@ function interpolate() {
 }
 
 const predictor = new Predictor();
+function myHud(you) {
+  if (!you) return null;
+  const s = you.inv.slots[you.inv.active];
+  return { ammo: s?.ammo ?? null, maxAmmo: s?.maxAmmo ?? null, reloading: s?.reloading ?? 0, dash: you.dash };
+}
+
 let currentState = null;
 let lastFrame = performance.now();
 function frame() {
@@ -243,6 +289,7 @@ function frame() {
     champion: m.phase === 'combat' || m.phase === 'rewards' ? m.champion : null,
     crownHolder: m.hud?.kind === 'crown' ? m.hud.holder : null,
     channel: latest.you?.channel,
+    myHud: myHud(latest.you),
     showHp: ['combat', 'finale', 'lobby'].includes(m.phase),
     touch: isTouch,
     mouseWorld: renderer.toWorld(input.mouse.x, input.mouse.y),

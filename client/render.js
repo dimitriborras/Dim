@@ -2,6 +2,7 @@
 // bords dangereux, ressorts), figurines « plastique » et effets de retour.
 import { MAPS } from '../shared/maps.js';
 import { PLAYER, HAZARD } from '../shared/constants.js';
+import { settings } from './settings.js';
 
 const WALL_COLORS = ['#ff5a5a', '#3d8bff', '#3ddc84', '#ffd23d', '#c45cff', '#ff8f3d'];
 const WEAPON_COLORS = { pistol: '#ff9f1c', glue_launcher: '#7bdc3d', spring_glove: '#ff4d6d' };
@@ -20,6 +21,11 @@ export class Renderer {
     this.cam = { x: 800, y: 500, scale: 1 };
     this.fallStart = new Map();
     this.shake = 0;
+    this.flash = new Map(); // id -> fin du flash blanc (touché)
+    this.recoil = new Map(); // id -> instant du dernier tir
+    this.dmgDirs = []; // directions d'où viennent les dégâts reçus
+    this.hitMarkers = []; // touches infligées par le joueur local
+    this.hitStopUntil = 0; // micro-gel de l'image sur un impact décisif
     this.stripe = this.makeStripe();
     this.resize();
     addEventListener('resize', () => this.resize());
@@ -50,8 +56,20 @@ export class Renderer {
   updateCamera(map, focus) {
     const pad = 30;
     if (!map.follow) {
-      const scale = Math.min(this.W / (map.width + pad), this.H / (map.height + pad));
-      this.cam = { x: map.width / 2, y: map.height / 2, scale };
+      const fit = Math.min(this.W / (map.width + pad), this.H / (map.height + pad));
+      // Petit écran : l'arène entière serait illisible, on zoome et on suit le joueur.
+      const small = Math.min(this.W, this.H) < 560;
+      const scale = small && focus ? Math.max(fit, Math.min(this.H / 640, this.W / 980)) : fit;
+      if (scale === fit) {
+        this.cam = { x: map.width / 2, y: map.height / 2, scale };
+        return;
+      }
+      const hx = this.W / 2 / scale;
+      const hy = this.H / 2 / scale;
+      const tx = Math.max(hx - 60, Math.min(map.width - hx + 60, focus.x));
+      const ty = Math.max(hy - 60, Math.min(map.height - hy + 60, focus.y));
+      const same = Math.abs(this.cam.scale - scale) < 1e-6;
+      this.cam = { x: same ? this.cam.x + (tx - this.cam.x) * 0.18 : tx, y: same ? this.cam.y + (ty - this.cam.y) * 0.18 : ty, scale };
       return;
     }
     const scale = Math.min(this.H / (map.height + pad), this.W / 900);
@@ -74,13 +92,32 @@ export class Renderer {
   }
 
   // ------------------------------------------------------------ effets
-  addEvent(ev, players) {
+  addEvent(ev, players, youId) {
     const now = performance.now() / 1000;
     const p = ev.id ? players.get(ev.id) : null;
     const push = (fx) => this.effects.push({ born: now, ...fx });
     switch (ev.type) {
       case 'impact': push({ kind: 'spark', x: ev.x, y: ev.y, life: 0.25, color: ev.kind === 'glue' ? '#7bdc3d' : '#7df9ff' }); break;
-      case 'dmg': push({ kind: 'text', x: ev.x, y: ev.y - 30, text: `-${ev.amount}`, color: '#ff5a5a', life: 0.8 }); break;
+      case 'dmg':
+        push({ kind: 'text', x: ev.x, y: ev.y - 30, text: `-${ev.amount}`, color: ev.by === youId ? '#ffffff' : '#ff5a5a', life: 0.8, size: ev.by === youId ? 20 : 16 });
+        this.flash.set(ev.id, now + 0.09);
+        if (ev.id === youId) {
+          if (ev.ax !== null) this.dmgDirs.push({ a: Math.atan2(ev.ay - ev.y, ev.ax - ev.x), born: now });
+          this.shake = Math.max(this.shake, 5);
+        }
+        if (ev.by === youId) this.hitMarkers.push({ x: ev.x, y: ev.y, born: now, kill: false });
+        break;
+      case 'push':
+        this.flash.set(ev.id, now + 0.06);
+        if (ev.by === youId) this.hitMarkers.push({ x: ev.x, y: ev.y, born: now, kill: false, soft: true });
+        break;
+      case 'shot':
+        this.recoil.set(ev.id, now);
+        push({ kind: 'muzzle', id: ev.id, life: 0.07, color: ev.kind === 'glue' ? '#b6ff7a' : '#fff3b0' });
+        break;
+      case 'dash':
+        push({ kind: 'dust', id: ev.id, life: 0.35 });
+        break;
       case 'boom':
         push({ kind: 'ring', x: ev.x, y: ev.y, r: ev.r, life: 0.45, color: '#ff6fb5' });
         for (let i = 0; i < 26; i++) push({ kind: 'confetti', x: ev.x, y: ev.y, a: Math.random() * 6.28, s: 120 + Math.random() * 260, life: 0.9, color: WALL_COLORS[i % WALL_COLORS.length] });
@@ -94,7 +131,11 @@ export class Renderer {
       case 'elim':
         push({ kind: 'text', x: ev.x, y: ev.y - 20, text: ev.cause === 'fall' ? '💫 CHUTE !' : '💥 K.O. !', color: '#ffd23d', life: 1.1, size: 22 });
         for (let i = 0; i < 16; i++) push({ kind: 'confetti', x: ev.x, y: ev.y, a: Math.random() * 6.28, s: 80 + Math.random() * 160, life: 0.7, color: '#ffffff' });
-        this.shake = Math.max(this.shake, 5);
+        this.shake = Math.max(this.shake, ev.killer === youId || ev.victim === youId ? 9 : 4);
+        if (ev.killer === youId) {
+          this.hitMarkers.push({ x: ev.x, y: ev.y, born: now, kill: true });
+          this.hitStopUntil = now + 0.08;
+        }
         break;
       case 'bump': push({ kind: 'ring', x: ev.x, y: ev.y, r: 46, life: 0.3, color: '#ff4d6d' }); break;
       case 'spring': push({ kind: 'ring', x: ev.x, y: ev.y, r: 50, life: 0.35, color: '#3ddc84' }); break;
@@ -122,8 +163,8 @@ export class Renderer {
     let sx = 0;
     let sy = 0;
     if (this.shake > 0.1) {
-      sx = (Math.random() - 0.5) * this.shake;
-      sy = (Math.random() - 0.5) * this.shake;
+      sx = (Math.random() - 0.5) * this.shake * settings.shake;
+      sy = (Math.random() - 0.5) * this.shake * settings.shake;
       this.shake *= 0.85;
     }
     ctx.setTransform(dpr * cam.scale, 0, 0, dpr * cam.scale, dpr * (this.W / 2 - cam.x * cam.scale + sx), dpr * (this.H / 2 - cam.y * cam.scale + sy));
@@ -139,12 +180,84 @@ export class Renderer {
     for (const p of order) {
       const info = state.roster.get(p.id);
       if (!info || p.s === 'dead') continue;
-      this.drawFigure(p, info, now, { me: p.id === state.youId, champion: p.id === state.champion, crown: p.id === state.crownHolder, channel: p.id === state.youId ? state.channel : null, showHp: state.showHp });
+      this.drawFigure(p, info, now, { hud: p.id === state.youId ? state.myHud : null, me: p.id === state.youId, champion: p.id === state.champion, crown: p.id === state.crownHolder, channel: p.id === state.youId ? state.channel : null, showHp: state.showHp });
     }
     for (const b of state.bombs) this.drawBomb(b, now);
     for (const pr of state.proj) this.drawProjectile(pr);
     if (me && me.s === 'alive') this.drawAim(me, state);
     this.drawEffects(now, state);
+    this.drawOverlay(now, state, me);
+  }
+
+  // Couche d'interface dessinée en coordonnées écran par-dessus le monde.
+  drawOverlay(now, state, me) {
+    const { ctx, dpr, W, H } = this;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Vie basse : bords rouges qui battent.
+    if (me && me.s === 'alive' && state.showHp && me.hp <= 35) {
+      const beat = 0.35 + 0.25 * Math.sin(now * (me.hp <= 20 ? 12 : 7));
+      const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
+      g.addColorStop(0, 'rgba(255,0,40,0)');
+      g.addColorStop(1, `rgba(255,0,40,${beat})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+    // Direction des dégâts reçus : arcs rouges autour du joueur.
+    this.dmgDirs = this.dmgDirs.filter((d) => now - d.born < 0.9);
+    if (me && this.dmgDirs.length) {
+      const c = this.toScreen(me.x, me.y);
+      const R = Math.min(W, H) * 0.22;
+      for (const d of this.dmgDirs) {
+        const k = 1 - (now - d.born) / 0.9;
+        ctx.strokeStyle = `rgba(255, 60, 60, ${0.9 * k})`;
+        ctx.lineWidth = 10;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, R, d.a - 0.32, d.a + 0.32);
+        ctx.stroke();
+      }
+    }
+    // Adversaires hors de l'écran : flèche colorée sur le bord, dans leur direction.
+    if (me) {
+      const c = this.toScreen(me.x, me.y);
+      const m = 18;
+      for (const o of state.players) {
+        if (o.id === state.youId || o.s !== 'alive') continue;
+        const p = this.toScreen(o.x, o.y);
+        if (p.x > m && p.x < W - m && p.y > m && p.y < H - m) continue;
+        const a = Math.atan2(p.y - c.y, p.x - c.x);
+        const kx = Math.cos(a) > 0 ? (W - m - c.x) / Math.cos(a) : (m - c.x) / Math.cos(a);
+        const ky = Math.sin(a) > 0 ? (H - m - c.y) / Math.sin(a) : (m - c.y) / Math.sin(a);
+        const k = Math.min(Math.abs(kx), Math.abs(ky));
+        const x = c.x + Math.cos(a) * k;
+        const y = c.y + Math.sin(a) * k;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(a);
+        ctx.fillStyle = state.roster.get(o.id)?.color ?? '#fff';
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -8); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+    }
+    // Marqueurs de touche : la confirmation immédiate qu'un tir a porté.
+    this.hitMarkers = this.hitMarkers.filter((h) => now - h.born < (h.kill ? 0.45 : 0.22));
+    for (const h of this.hitMarkers) {
+      const p = this.toScreen(h.x, h.y);
+      const k = (now - h.born) / (h.kill ? 0.45 : 0.22);
+      const s = (h.kill ? 16 : 9) + k * 6;
+      ctx.strokeStyle = h.kill ? '#ff3355' : h.soft ? 'rgba(125,249,255,0.9)' : '#ffffff';
+      ctx.lineWidth = h.kill ? 4 : 3;
+      ctx.globalAlpha = 1 - k * 0.7;
+      ctx.beginPath();
+      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        ctx.moveTo(p.x + dx * s * 0.45, p.y + dy * s * 0.45);
+        ctx.lineTo(p.x + dx * s, p.y + dy * s);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
 
   drawBackdrop() {
@@ -298,8 +411,11 @@ export class Renderer {
     ctx.ellipse(p.x + (air ? 10 : 3), p.y + (air ? 22 : 6), R * (air ? 0.8 : 1), R * 0.55, 0, 0, 7);
     ctx.fill();
 
-    ctx.translate(p.x, p.y - (air ? 10 : 0));
+    // Recul de l'arme au tir et étirement pendant l'esquive.
+    const rk = Math.max(0, 1 - (now - (this.recoil.get(p.id) ?? -9)) / 0.1);
+    ctx.translate(p.x - Math.cos(p.a) * rk * 4, p.y - Math.sin(p.a) * rk * 4 - (air ? 10 : 0));
     ctx.scale(scale, scale);
+    if (f.includes('d')) ctx.scale(1.12, 0.9);
     if (f.includes('l')) ctx.rotate(now * 14);
     const color = info.color;
 
@@ -339,7 +455,12 @@ export class Renderer {
       ctx.fillStyle = 'rgba(123, 220, 61, 0.65)';
       ctx.beginPath(); ctx.arc(-8, 4, 6, 0, 7); ctx.arc(7, 7, 5, 0, 7); ctx.arc(0, -8, 4, 0, 7); ctx.fill();
     }
+    if (now < (this.flash.get(p.id) ?? 0)) {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.arc(0, -3, 15, 0, 7); ctx.arc(0, -15, 10.5, 0, 7); ctx.fill();
+    }
     ctx.restore();
+    if (opts.hud && p.s === 'alive') this.drawOwnHud(p, opts.hud, now);
 
     ctx.save();
     ctx.globalAlpha = Math.max(0.15, alpha);
@@ -395,6 +516,40 @@ export class Renderer {
       ctx.fillStyle = '#ffd23d';
       ctx.beginPath(); ctx.moveTo(p.x, p.y + 30); ctx.lineTo(p.x - 7, p.y + 40); ctx.lineTo(p.x + 7, p.y + 40); ctx.closePath(); ctx.fill();
     }
+    ctx.restore();
+  }
+
+  // Munitions et esquive affichées sous le personnage : pas besoin de quitter l'action des yeux.
+  drawOwnHud(p, hud, now) {
+    const { ctx } = this;
+    const R = 27;
+    const start = Math.PI * 0.2;
+    const span = Math.PI * 0.6;
+    ctx.save();
+    ctx.lineCap = 'butt';
+    if (hud.reloading > 0) {
+      ctx.strokeStyle = 'rgba(255, 210, 61, 0.9)';
+      ctx.lineWidth = 4;
+      const t = (now * 2) % 1;
+      ctx.beginPath(); ctx.arc(p.x, p.y, R, start + span * t, start + span * Math.min(1, t + 0.25)); ctx.stroke();
+    } else if (hud.maxAmmo) {
+      const n = hud.maxAmmo;
+      const gap = 0.03;
+      const seg = span / n;
+      ctx.lineWidth = 4;
+      for (let i = 0; i < n; i++) {
+        ctx.strokeStyle = i < hud.ammo ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.35)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, R, start + span - (i + 1) * seg + gap, start + span - i * seg - gap); ctx.stroke();
+      }
+    }
+    // Esquive : arc gauche, plein = disponible.
+    const ready = hud.dash <= 0;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.arc(p.x, p.y, R, Math.PI * 0.82, Math.PI * 1.18); ctx.stroke();
+    ctx.strokeStyle = ready ? '#7df9ff' : 'rgba(125,249,255,0.55)';
+    const k = ready ? 1 : 1 - hud.dash / 4;
+    ctx.beginPath(); ctx.arc(p.x, p.y, R, Math.PI * 1.18 - Math.PI * 0.36 * k, Math.PI * 1.18); ctx.stroke();
     ctx.restore();
   }
 
@@ -530,6 +685,25 @@ export class Renderer {
           ctx.strokeText(e.text, e.x, e.y - k * 30);
           ctx.fillStyle = e.color;
           ctx.fillText(e.text, e.x, e.y - k * 30);
+          break;
+        }
+        case 'muzzle': {
+          const p = state.players.find((x) => x.id === e.id);
+          if (!p) break;
+          const mx = p.x + Math.cos(p.a) * 42;
+          const my = p.y + Math.sin(p.a) * 42;
+          ctx.fillStyle = e.color;
+          ctx.beginPath(); ctx.arc(mx, my, 9 * (1 - k * 0.5), 0, 7); ctx.fill();
+          break;
+        }
+        case 'dust': {
+          const p = state.players.find((x) => x.id === e.id);
+          if (!p) break;
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          for (let i = 0; i < 5; i++) {
+            const a = i * 1.26 + e.born;
+            ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * 18 * (1 + k), p.y + 12 + Math.sin(a) * 6 * (1 + k), 5 * (1 - k) + 1, 0, 7); ctx.fill();
+          }
           break;
         }
         case 'punch': {

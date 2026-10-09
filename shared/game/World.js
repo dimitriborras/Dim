@@ -20,6 +20,9 @@ const DEFAULT_RULES = {
 
 const MAX_TRAPS = 8;
 
+// Vrai si l'action « sN » vise une arme (un gadget dans cet emplacement serait déclenché, pas sélectionné).
+const ITEMS_WEAPON_SWITCH = (p, a) => p.inv.slots[Number(a[1])]?.id && InventorySystem.isWeaponSlot(p.inv, Number(a[1]));
+
 // Simulation physique d'une phase : déplacement (PlayerController côté serveur),
 // projectiles, pièges, éléments d'arène. Les règles de score sont injectées via `hooks`.
 export class World {
@@ -223,7 +226,10 @@ export class World {
 
   stepPlayer(p, dt, prevMovers) {
     const t = this.time;
-    if (p.state === 'dead') return;
+    if (p.state === 'dead') {
+      p.actions.length = 0; // pas d'actions en attente qui partiraient à la réapparition
+      return;
+    }
     InventorySystem.update(p, t);
 
     if (p.state === 'falling') {
@@ -248,6 +254,11 @@ export class World {
 
     // Actions ponctuelles (esquive, gadgets, consommables, sélection d'emplacement).
     const actions = p.actions.splice(0);
+    // Changer d'arme reste possible pendant une glissade ou un achat ; le reste attend.
+    const isSwitch = (a) => a === 'wn' || a === 'wp' || (a[0] === 's' && a.length === 2 && ITEMS_WEAPON_SWITCH(p, a));
+    if (frozen || slipping || busy) {
+      for (const a of actions) if (isSwitch(a)) this.doAction(p, a, moving);
+    }
     if (!frozen && !slipping && !busy) {
       for (const a of actions) this.doAction(p, a, moving);
       if (input.fire) InventorySystem.fire(p, this);
@@ -310,6 +321,8 @@ export class World {
       InventorySystem.useConsumable(p, this, a === 'c0' ? 0 : 1);
     } else if (a === 's0' || a === 's1' || a === 's2') {
       InventorySystem.pressSlot(p, this, Number(a[1]));
+    } else if (a === 'wn' || a === 'wp') {
+      InventorySystem.cycleWeapon(p, this, a === 'wn' ? 1 : -1);
     }
   }
 

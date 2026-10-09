@@ -1,5 +1,6 @@
 // Interface DOM : phases, chronomètre, classement, inventaire, boutique, lobby.
 import { ROUND_OPTIONS } from '../shared/constants.js';
+import { settings, setSetting } from './settings.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -32,6 +33,7 @@ export class Hud {
     this.toastTimer = 0;
     this.phaseStartedAt = 0;
     $('#shopBtn').onclick = () => this.toggleShop();
+    this.bindSettings();
     $('#shopClose').onclick = () => this.toggleShop(false);
     $('#shopItems').addEventListener('click', (e) => {
       const b = e.target.closest('button[data-item]');
@@ -80,13 +82,16 @@ export class Hud {
 
   pushFeed(html) {
     this.feed.unshift({ html, at: performance.now() });
-    this.feed = this.feed.slice(0, 6);
+    this.feed = this.feed.slice(0, document.body.classList.contains('touch') ? 2 : 6);
   }
 
   onEvent(ev, youId) {
     const it = (id) => this.items.get(id);
+    const plain = (id) => esc(this.roster?.get(id)?.name ?? '?');
     switch (ev.type) {
       case 'elim':
+        if (ev.killer === youId) this.announce(`💥 ${plain(ev.victim)} ${ev.cause === 'fall' ? 'poussé dans le vide' : 'K.O.'} !`, 'good');
+        else if (ev.victim === youId) this.announce(ev.killer ? `Éliminé par ${plain(ev.killer)}` : ev.cause === 'fall' ? 'Tombé dans le vide…' : 'K.O. !', 'bad');
         if (ev.killer) this.pushFeed(`${this.name(ev.killer)} ${ev.cause === 'fall' ? '🌀 pousse' : '💥'} ${this.name(ev.victim)}`);
         else this.pushFeed(`${this.name(ev.victim)} ${ev.cause === 'fall' ? 'tombe dans le vide' : 'est K.O.'}`);
         break;
@@ -95,9 +100,15 @@ export class Hud {
         if (ev.id === youId && ev.reason !== 'Mini-jeu' && ev.reason !== 'Finale') this.pushFeed(`🏆 +${ev.amount} pts — ${esc(ev.reason)}`);
         break;
       case 'credits':
-        if (ev.id === youId && (ev.reason === 'Contrat rempli' || ev.reason === 'Prime du champion')) this.pushFeed(`💰 +${ev.amount} crédits — ${esc(ev.reason)}`);
+        if (ev.id === youId && (ev.reason === 'Contrat rempli' || ev.reason === 'Prime du champion')) {
+          this.pushFeed(`💰 +${ev.amount} crédits — ${esc(ev.reason)}`);
+          this.announce(`${ev.reason === 'Contrat rempli' ? '📜' : '🎯'} ${esc(ev.reason)}<small>+${ev.amount} crédits</small>`, 'good');
+        }
         break;
-      case 'champion': this.pushFeed(`🎯 ${this.name(ev.id)} est le champion : bouclier + prime !`); break;
+      case 'champion':
+        this.pushFeed(`🎯 ${this.name(ev.id)} est le champion : bouclier + prime !`);
+        this.announce(ev.id === youId ? '🎯 Tu es le champion !<small>Bouclier actif… mais ta tête est mise à prix</small>' : `🎯 Prime sur ${plain(ev.id)}<small>+2 pts et +30 crédits pour qui l'élimine</small>`, ev.id === youId ? 'good' : '');
+        break;
       case 'join': this.pushFeed(`➕ ${esc(ev.name)} rejoint la salle`); break;
       case 'leave': this.pushFeed(`➖ ${esc(ev.name)} est parti`); break;
       case 'host': this.pushFeed(`⭐ ${this.name(ev.id)} devient l'hôte`); break;
@@ -254,10 +265,54 @@ export class Hud {
     if ($('#consumables').innerHTML !== cons) $('#consumables').innerHTML = cons;
     $('#dash .cd').style.height = `${Math.min(100, (you.dash / 4) * 100)}%`;
     $('#wallet').innerHTML = you.inMatch ? `💰 ${you.credits}<br>🏆 ${you.points}` : '💰 —<br>🏆 —';
-    for (let i = 0; i < 2; i++) {
-      const b = document.getElementById(`tc${i}`);
-      if (b) b.textContent = inv.consumables[i] ? this.items.get(inv.consumables[i])?.icon ?? '·' : '·';
-    }
+    this.renderTouchButtons(you);
+  }
+
+  // Boutons tactiles : n'afficher que ce qui est utilisable, avec l'icône de l'objet et sa recharge.
+  renderTouchButtons(you) {
+    const inv = you.inv;
+    const setBtn = (id, icon, cdPct) => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      b.hidden = !icon;
+      if (!icon) return;
+      const html = `${icon}<i class="ring" style="--cd:${cdPct.toFixed(0)}%"></i>`;
+      if (b.innerHTML !== html) b.innerHTML = html;
+    };
+    inv.consumables.forEach((c, i) => setBtn(`tc${i}`, c ? this.items.get(c)?.icon : null, 0));
+    const gadget = inv.slots.find((s) => s && this.items.get(s.id)?.category === 'gadget');
+    setBtn('tgadget', gadget ? this.items.get(gadget.id)?.icon : null, gadget?.cooldownTotal ? (gadget.cooldown / gadget.cooldownTotal) * 100 : 0);
+    const weapons = inv.slots.filter((s) => s && this.items.get(s.id)?.category === 'weapon').length;
+    setBtn('tweapon', weapons > 1 ? '🔁' : null, 0);
+    setBtn('tdash', '💨', (you.dash / 4) * 100);
+  }
+
+  announce(html, tone = '') {
+    const el = document.querySelector('#announce');
+    el.innerHTML = `<div class="a ${tone}">${html}</div>`;
+  }
+
+  bindSettings() {
+    const panel = $('#settingsPanel');
+    const open = (on) => {
+      panel.hidden = !on;
+      document.body.classList.toggle('settings-open', on);
+    };
+    $('#settingsBtn').onclick = () => open(panel.hidden);
+    $('#settingsClose').onclick = () => open(false);
+    const bindCheck = (id, key) => {
+      const el = $(id);
+      el.checked = !!settings[key];
+      el.onchange = () => setSetting(key, el.checked);
+    };
+    bindCheck('#setAutoFire', 'autoFire');
+    bindCheck('#setAimAssist', 'aimAssist');
+    bindCheck('#setHaptics', 'haptics');
+    bindCheck('#setLefty', 'leftHanded');
+    $('#setShake').value = String(settings.shake);
+    $('#setShake').onchange = (e) => setSetting('shake', Number(e.target.value));
+    $('#setVolume').value = String(settings.volume);
+    $('#setVolume').oninput = (e) => setSetting('volume', Number(e.target.value));
   }
 
   renderContract(you) {

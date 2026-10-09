@@ -99,6 +99,25 @@ export const InventorySystem = {
     return this.useState(player, world, s);
   },
 
+  isWeaponSlot(inv, index) {
+    const s = inv.slots[index];
+    return !!s && ITEMS[s.id].category === 'weapon';
+  },
+
+  // Molette, gâchettes de manette : arme suivante ou précédente parmi celles autorisées.
+  cycleWeapon(player, world, dir) {
+    const slots = player.inv.slots;
+    for (let k = 1; k <= slots.length; k++) {
+      const i = (player.inv.active + dir * k + slots.length * 3) % slots.length;
+      const s = slots[i];
+      if (!s || ITEMS[s.id].category !== 'weapon') continue;
+      if (world.rules.weapons === 'pistol' && s.id !== 'pistol') continue;
+      player.inv.active = i;
+      return true;
+    }
+    return false;
+  },
+
   fire(player, world) {
     const s = player.inv.slots[player.inv.active] ?? player.inv.slots[0];
     return this.useState(player, world, s);

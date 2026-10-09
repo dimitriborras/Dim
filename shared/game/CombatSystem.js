@@ -34,9 +34,11 @@ export const CombatSystem = {
     }
     world.hooks.onHit?.(attacker, victim, cause);
 
+    if (!harmful && attacker && attacker.id !== victim.id) world.emit('push', { id: victim.id, by: attacker.id, x: victim.x, y: victim.y });
     if (harmful) {
       victim.hp = Math.max(0, victim.hp - damage);
-      world.emit('dmg', { id: victim.id, amount: damage, x: victim.x, y: victim.y });
+      // `by` et la position de l'attaquant servent au client : marqueur de touche et direction des dégâts.
+      world.emit('dmg', { id: victim.id, amount: damage, x: victim.x, y: victim.y, by: attacker?.id ?? null, ax: attacker ? Math.round(attacker.x) : null, ay: attacker ? Math.round(attacker.y) : null });
       if (attacker && attacker.id !== victim.id) world.hooks.onDamage?.(attacker, victim, damage);
       if (victim.hp <= 0) this.eliminate(world, victim, attacker ? attacker.id : null, 'ko');
     }

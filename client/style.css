@@ -174,3 +174,63 @@ body.touch #shop { bottom: 70px; top: 46px; }
 @media (orientation: portrait) and (max-width: 700px) {
   body.touch.playing #rotate { display: grid; position: fixed; inset: 0; z-index: 50; place-items: center; background: var(--bg); font-size: 22px; font-weight: 800; padding: 20px; text-align: center; }
 }
+
+/* ---------- Étape 1 : réglages, annonces, tactile ---------- */
+#settingsBtn { position: absolute; top: 10px; right: 10px; font-size: 18px; padding: 6px 10px; background: var(--panel); }
+#settingsPanel { position: absolute; top: 56px; right: 10px; width: min(380px, 94vw); max-height: calc(100vh - 80px); overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; display: grid; gap: 10px; z-index: 30; }
+#settingsPanel header { display: flex; align-items: center; justify-content: space-between; }
+#settingsPanel h2 { margin: 0; font-size: 18px; }
+.opt { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; }
+.opt small { color: var(--muted); font-weight: 400; }
+.opt input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); order: 2; flex: none; }
+.opt select, .opt input[type=range] { font: inherit; background: #141a36; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; }
+#feed { top: 56px; right: 10px; }
+body.settings-open #feed { display: none; }
+
+#announce { position: absolute; left: 50%; top: 24%; transform: translateX(-50%); pointer-events: none; text-align: center; font-weight: 900; }
+#announce .a { font-size: clamp(22px, 4vw, 34px); text-shadow: 0 3px 0 rgba(0,0,0,.45), 0 0 18px rgba(0,0,0,.4); animation: pop .9s cubic-bezier(.2,1.6,.4,1) both; white-space: nowrap; }
+#announce .a small { display: block; font-size: .5em; color: var(--accent); }
+#announce .a.good { color: var(--accent); }
+#announce .a.bad { color: #ff7a7a; }
+@keyframes pop { 0% { transform: scale(.3); opacity: 0; } 25% { transform: scale(1.15); opacity: 1; } 80% { transform: scale(1); opacity: 1; } 100% { transform: scale(1) translateY(-14px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #announce .a { animation-duration: 1.4s; animation-timing-function: linear; } #timer.hurry { animation: none; } }
+
+.tbtn { position: relative; overflow: hidden; }
+.tbtn .ring { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(rgba(0,0,0,.55) var(--cd, 0%), transparent 0); pointer-events: none; }
+.stick.firing { border-color: rgba(255, 77, 109, .8); box-shadow: 0 0 0 4px rgba(255, 77, 109, .25); }
+body.lefty #zoneL { left: auto; right: 0; }
+body.lefty #zoneR { right: auto; left: 120px; }
+body.lefty #touchButtons { right: auto; left: 10px; }
+/* Le lobby passe au-dessus de la barre d'inventaire (petits écrans en paysage). */
+#lobby { z-index: 10; max-height: calc(100vh - 24px); }
+@media (max-height: 500px) {
+  #lobby { padding: 10px 12px; }
+  #lobby .players { grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 6px 0; font-size: 13px; }
+  #lobby .code { font-size: 26px; }
+}
+
+/* ---------- Disposition tactile compacte ---------- */
+body.touch #topbar { top: 6px; gap: 6px; }
+body.touch #topbar > div { padding: 3px 10px; font-size: 13px; }
+body.touch #scoreboard { top: 6px; left: 6px; font-size: 10px; min-width: 0; padding: 4px 6px; opacity: .92; }
+body.touch #scoreboard .row { grid-template-columns: 10px 1fr auto; gap: 4px; padding: 0; }
+body.touch #scoreboard .row:nth-child(n+6):not(.me) { display: none; }
+body.touch #scoreboard .name { max-width: 88px; }
+body.touch #scoreboard .head { display: none; }
+body.touch #scoreboard .dot { width: 9px; height: 9px; }
+body.touch #feed { top: 44px; right: 6px; width: 170px; gap: 2px; }
+body.touch #feed .item { font-size: 10px; padding: 2px 6px; }
+body.touch #contract { top: 36px !important; font-size: 10px; padding: 2px 8px; border-width: 1px; }
+body.touch #minihud { top: 34px; }
+body.touch #settingsBtn { top: 6px; right: 6px; padding: 3px 7px; font-size: 14px; }
+body.touch #touchButtons { bottom: 10px; gap: 6px; }
+body.touch .tbtn { width: 50px; height: 50px; font-size: 18px; }
+body.touch .tbtn.big { width: 106px; }
+body.touch #wallet { font-size: 11px; padding: 3px 6px; }
+body.touch #center .card { padding: 10px 14px; }
+body.touch #center h2 { font-size: 20px; }
+body.touch #center .big { font-size: 40px; }
+body.touch #announce { top: 18%; }
+body.touch #announce .a { font-size: 18px; }
+body.touch #consumables, body.touch #shopBtn kbd, body.touch .slot .key { display: none; }
+body.touch #shopBtn { padding: 6px 10px; }
