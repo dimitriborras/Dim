@@ -66,7 +66,11 @@ On avance par étapes. Chaque étape doit laisser le jeu jouable et être testé
    et gadgets) ; nouveaux mini-jeux *Le Palet* (crokinole / curling) et *Les poches gloutonnes* ; jetons volés
    par les chocs ; couronne volée par un Carton.
 4 ter. **Mini-jeux exotiques** *(fait)* : la patate chaude (Mario Party), le carrelage (Fall Guys), le vingt-et-un
-   à pichenettes (blackjack, cartes face cachée). À venir : mémory géant, roi de la colline, petits chevaux.
+   à pichenettes (blackjack, cartes face cachée), le mémory géant, le roi de la colline.
+4 quater. **Autres physiques** *(fait)* : La Mine (2D vue de côté, creuser dans le noir, joystick), Le
+   déménagement (R.E.P.O. : objets fragiles, chat, coopération), L'imposteur (Among Us : rôles cachés, tâches,
+   réunions, votes). À venir : petits chevaux, une manche de construction (Minecraft), un mode « une seule
+   manette » pour les soirées sur un même écran.
 5. **Personnage et humour** : chapeaux et accessoires de figurine, émotes et messages rapides, chutes
    comiques, voix « plastique », récompenses de fin de partie (« Plus grosse chute », « Roi de la banane »).
 6. **Mini-jeux** (objectif 8 et plus, en variant compétition, coopération et bluff) : patate chaude,

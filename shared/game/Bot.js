@@ -18,10 +18,11 @@ export class BotBrain {
   }
 
   think(p, world, mode, extra = {}) {
+    if (mode === 'none') return; // le mini-jeu pilote lui-même ses bots (ex. la Mine)
     p.input = { mx: 0, my: 0, aim: p.aim, fire: false };
     if (p.state !== 'alive') return;
     const t = world.time;
-    if (!['safe', 'race', 'coins', 'blackjack'].includes(mode)) this.useItems(p, world);
+    if (!['safe', 'race', 'coins', 'blackjack', 'impostor'].includes(mode)) this.useItems(p, world);
     const speed = Math.hypot(p.vx, p.vy);
     if (t < this.nextAt || speed > 70 || (p.energy ?? 0) < PLAYER.flickCost) return;
     // Temps de réaction humain, plus long pour les bots moins doués.
@@ -35,6 +36,10 @@ export class BotBrain {
     else if (mode === 'bomb') goal = this.bombGoal(p, world, extra.micro);
     else if (mode === 'tiles') goal = this.tilesGoal(p, world, extra.micro);
     else if (mode === 'blackjack') goal = this.blackjackGoal(p, world, extra.micro);
+    else if (mode === 'memory') goal = this.memoryGoal(p, world, extra.micro);
+    else if (mode === 'king') goal = this.kingGoal(p, world, extra.micro);
+    else if (mode === 'movers') goal = this.moversGoal(p, world, extra.micro);
+    else if (mode === 'impostor') goal = this.impostorGoal(p, world, extra.micro);
     else if (mode === 'safe') goal = this.rng.next() < 0.12 ? this.wanderGoal(p, world) : null;
     else if (mode === 'lobby') goal = this.rng.next() < 0.5 ? this.poolShot(p, world) ?? this.wanderGoal(p, world) : null;
     else goal = this.fightGoal(p, world, extra);
@@ -185,22 +190,164 @@ export class BotBrain {
     if (!pool.length || (pool[0].v < Math.min(room, 7) && hidden.length && room >= 9)) pool = hidden.sort((a, b) => dist(p, a.c) - dist(p, b.c));
     if (!pool.length) { p.actions.push('item'); return null; }
     for (const { c } of pool.slice(0, 4)) {
-      const cx = c.x + c.w / 2;
-      const cy = c.y + c.h / 2;
-      const a = Math.atan2(cy - p.y, cx - p.x);
-      for (let pw = 0.1; pw <= 1.001; pw += 0.05) {
-        const sim = simulateFlick(p, a, pw, world.map, { factor: (p.speedFactor ?? 1) * (p.powerMul ?? 1), isGround: (x, y) => world.isGround(x, y) });
-        const e = sim.end;
-        if (e.x > c.x + 12 && e.x < c.x + c.w - 12 && e.y > c.y + 12 && e.y < c.y + c.h - 12) {
-          // Main humaine : un peu d'imprécision, plus forte chez les bots moins doués.
-          const ea = (1.2 - this.skill) * 0.12;
-          const ep = (1.2 - this.skill) * 0.12;
-          return { x: cx, y: cy, flick: { a: a + this.rng.range(-ea, ea), p: Math.max(0.05, Math.min(1, pw + this.rng.range(-ep, ep))) } };
-        }
-      }
+      const shot = this.aimAtRect(p, world, c);
+      if (shot) return shot;
     }
     p.actions.push('item');
     return null;
+  }
+
+  // Roi de la colline : y aller, et en déloger les autres (de préférence vers une poche).
+  kingGoal(p, world, hint) {
+    const z = hint?.zone;
+    if (!z) return null;
+    const inZone = (o) => Math.hypot(o.x - z.x, o.y - z.y) <= z.r;
+    const rivals = world.players.filter((o) => o !== p && o.state === 'alive' && inZone(o));
+    if (rivals.length && this.rng.next() < 0.75) {
+      const t = rivals.reduce((a, b) => (dist(p, a) < dist(p, b) ? a : b));
+      return { x: t.x, y: t.y, push: true };
+    }
+    if (inZone(p) && Math.hypot(p.x - z.x, p.y - z.y) < z.r * 0.6) return null; // bien placé : on tient
+    return { x: z.x + this.rng.range(-25, 25), y: z.y + this.rng.range(-25, 25) };
+  }
+
+  // Déménagement : se placer derrière un objet et le pousser vers la porte suivante, puis le camion.
+  moversGoal(p, world, hint) {
+    if (!hint) return null;
+    const T = hint.truck;
+    const room = (x) => (x < 615 ? 0 : x < 1115 ? 1 : 2);
+    const doors = [{ x: 615, y: 530 }, { x: 1115, y: 435 }];
+    const goalFor = (o) => (room(o.x) < 2 ? doors[room(o.x)] : { x: T.x + T.w / 2, y: T.y + T.h / 2 });
+    let best = null;
+    for (const b of world.balls) {
+      if (!b.active || b === hint.cat || !b.value) continue;
+      const score = b.value / (200 + dist(p, b)) / (b.mass > 2 ? 1.6 : 1);
+      if (!best || score > best.score) best = { b, score };
+    }
+    if (!best) return this.wanderGoal(p, world);
+    const o = best.b;
+    // Mauvaise pièce : rejoindre d'abord l'objet en passant par la porte.
+    if (room(p.x) !== room(o.x) && !world.lineOfSight(p, o)) return this.route(p, world, o);
+    const g = goalFor(o);
+    const tx = g.x - o.x;
+    const ty = g.y - o.y;
+    const tl = Math.hypot(tx, ty) || 1;
+    const ghost = { x: o.x - (tx / tl) * (PLAYER.radius + o.r), y: o.y - (ty / tl) * (PLAYER.radius + o.r) };
+    const behind = { x: o.x - (tx / tl) * (PLAYER.radius + o.r + 60), y: o.y - (ty / tl) * (PLAYER.radius + o.r + 60) };
+    // Pas encore derrière l'objet : on s'y place d'abord (sans le toucher).
+    const lined = ((p.x - o.x) * tx + (p.y - o.y) * ty) / tl < -(o.r + 10);
+    if (!lined) return { x: behind.x, y: behind.y };
+    // Dosage : assez pour l'emmener vers son but, sans le fracasser contre un mur.
+    const power = Math.min(o.mass > 2 ? 0.9 : 0.5, powerForDistance(dist(p, ghost) + Math.min(tl, 320) * 0.6 * (o.mass > 2 ? 1.8 : 1)));
+    return { x: ghost.x, y: ghost.y, push: true, exact: true, power };
+  }
+
+  // L'imposteur. Équipage : tâches, et signaler les corps vus. Imposteur : faire semblant,
+  // puis frapper quand une victime est isolée (personne d'autre à proximité).
+  impostorGoal(p, world, hint) {
+    const g = hint?.game;
+    if (!g) return null;
+    const me = g.privateState(p.id);
+    const stations = world.map.stations;
+    const sees = (o) => Math.hypot(o.x - p.x, o.y - p.y) < 300 && world.lineOfSight(p, o);
+    if (me.canReport && g.bodies.some(sees)) { p.actions.push('item'); return null; }
+    if (me.role === 'impostor') {
+      if (me.canKill) {
+        const v = g.alive().filter((o) => !g.impostors.has(o.id)).find((o) => Math.hypot(o.x - p.x, o.y - p.y) < 75);
+        const others = g.alive().filter((o) => o !== p && o !== v && Math.hypot(o.x - v.x, o.y - v.y) < 380);
+        if (others.length === 0 || this.rng.next() < 0.05) { p.actions.push('item'); return null; }
+      }
+      if (me.killIn <= 0) {
+        // Prêt : suivre la victime la plus isolée.
+        const prey = g.alive().filter((o) => !g.impostors.has(o.id))
+          .map((o) => ({ o, crowd: g.alive().filter((q) => q !== o && q !== p && Math.hypot(q.x - o.x, q.y - o.y) < 380).length }))
+          .sort((a, b) => a.crowd - b.crowd || dist(p, a.o) - dist(p, b.o))[0];
+        if (prey && prey.crowd === 0) {
+          const d = dist(p, prey.o);
+          if (d < 60) return null;
+          if (!world.lineOfSight(p, prey.o)) return this.route(p, world, prey.o);
+          const a = Math.atan2(prey.o.y - p.y, prey.o.x - p.x);
+          return { x: prey.o.x - Math.cos(a) * 45, y: prey.o.y - Math.sin(a) * 45 };
+        }
+      }
+    }
+    // Tâche suivante : y aller, puis rester immobile. L'imposteur fait semblant, poste après poste.
+    let s;
+    if (me.role === 'impostor') {
+      if (!this.fake || world.time > this.fake.until) this.fake = { s: Math.floor(this.rng.next() * stations.length), until: world.time + this.rng.range(6, 12) };
+      s = this.fake.s;
+    } else {
+      const next = me.tasks.find(([, , done]) => !done);
+      if (!next) return this.rng.next() < 0.05 ? this.wanderGoal(p, world) : null;
+      s = next[0];
+    }
+    const st = stations[s];
+    if (Math.hypot(p.x - st.x, p.y - st.y) < 40) return null;
+    const step = this.route(p, world, st);
+    return { x: step.x + this.rng.range(-10, 10), y: step.y + this.rng.range(-10, 10) };
+  }
+
+  // Cible derrière une cloison : passer par la porte (point de passage) la plus utile.
+  route(p, world, target) {
+    const wps = world.map.waypoints;
+    if (!wps?.length || world.lineOfSight(p, target)) return target;
+    let best = null;
+    let bs = Infinity;
+    for (const w of wps) {
+      if (dist(p, w) < 30 || !world.lineOfSight(p, w)) continue;
+      const s = dist(p, w) + dist(w, target) + (world.lineOfSight(w, target) ? 0 : 400);
+      if (s < bs) { bs = s; best = w; }
+    }
+    return best ?? target;
+  }
+
+  // Pichenette qui s'arrête dans ce rectangle (carte, case…), avec une imprécision humaine.
+  aimAtRect(p, world, c) {
+    const cx = c.x + c.w / 2;
+    const cy = c.y + c.h / 2;
+    const a = Math.atan2(cy - p.y, cx - p.x);
+    for (let pw = 0.1; pw <= 1.001; pw += 0.05) {
+      const sim = simulateFlick(p, a, pw, world.map, { factor: (p.speedFactor ?? 1) * (p.powerMul ?? 1), isGround: (x, y) => world.isGround(x, y) });
+      const e = sim.end;
+      if (e.x > c.x + 12 && e.x < c.x + c.w - 12 && e.y > c.y + 12 && e.y < c.y + c.h - 12) {
+        const ea = (1.2 - this.skill) * 0.12;
+        const ep = (1.2 - this.skill) * 0.12;
+        return { x: cx, y: cy, flick: { a: a + this.rng.range(-ea, ea), p: Math.max(0.05, Math.min(1, pw + this.rng.range(-ep, ep))) } };
+      }
+    }
+    return null;
+  }
+
+  // Mémory : retenir (plus ou moins bien) les cartes vues, finir sa paire, sinon explorer.
+  memoryGoal(p, world, hint) {
+    const g = hint?.game;
+    if (!g) return null;
+    this.memo ??= new Map();
+    g.visible().forEach((f, i) => { if (f && g.owner[i] === null && this.rng.next() < 0.25 + this.skill * 0.5) this.memo.set(i, f); });
+    for (const [i] of this.memo) if (g.owner[i] !== null) this.memo.delete(i);
+    const cards = world.map.cards;
+    const free = cards.map((c, i) => i).filter((i) => g.owner[i] === null);
+    if (!free.length) return null;
+    const first = g.first.get(p.id);
+    let target = null;
+    if (first !== undefined) {
+      const face = g.faces[first];
+      target = free.find((i) => i !== first && this.memo.get(i) === face) ?? null;
+    } else {
+      // Une paire connue ? On commence par l'une des deux.
+      const seen = new Map();
+      for (const [i, f] of this.memo) {
+        if (seen.has(f)) { target = seen.get(f); break; }
+        seen.set(f, i);
+      }
+    }
+    if (target === null) {
+      const unknown = free.filter((i) => i !== first && !this.memo.has(i));
+      const pool = unknown.length ? unknown : free.filter((i) => i !== first);
+      pool.sort((a, b) => dist(p, cards[a]) - dist(p, cards[b]));
+      target = pool[Math.floor(this.rng.next() * Math.min(3, pool.length))];
+    }
+    return target === undefined ? null : this.aimAtRect(p, world, cards[target]);
   }
 
   raceGoal(p, world) {

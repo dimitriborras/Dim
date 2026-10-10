@@ -5,6 +5,7 @@ import { Hud } from './hud.js';
 import { Sfx } from './audio.js';
 import { Predictor } from './predict.js';
 import { MicroOverlay } from './micro.js';
+import { MineView } from './mine.js';
 import { INTERP_DELAY_MS } from '../shared/constants.js';
 import { MAPS, isGroundAt } from '../shared/maps.js';
 import { simulateFlick } from '../shared/game/movement.js';
@@ -127,6 +128,7 @@ function onSnap(msg) {
   if (snaps.length > 30) snaps.shift();
   latest = msg;
   micro.update(msg);
+  if (msg.m.hud?.kind === 'mine') mineView.sync(msg, youId);
   if (msg.you?.body) predictor.reconcile(msg.you.body, msg.w.map);
   const players = new Map(msg.roster.map((r) => [r.id, r]));
   for (const ev of msg.ev) {
@@ -219,9 +221,10 @@ function interpolate() {
     return q ? { owner, x: lerp(q[2], x, k), y: lerp(q[3], y, k), a: ang } : { owner, x, y, a: ang };
   });
   const ballA = tupleMap(A.balls ?? []);
-  const balls = (B.balls ?? []).map(([id, x, y, num]) => {
+  const balls = (B.balls ?? []).map(([id, x, y, num, kind, r]) => {
     const q = ballA.get(id);
-    return q ? { id, num, x: lerp(q[1], x, k), y: lerp(q[2], y, k) } : { id, num, x, y };
+    const base = { id, num, kind: kind ?? null, r: r ?? 19 };
+    return q ? { ...base, x: lerp(q[1], x, k), y: lerp(q[2], y, k) } : { ...base, x, y };
   });
   const movers = B.movers.map((m, i) => (A.movers[i] ? [lerp(A.movers[i][0], m[0], k), lerp(A.movers[i][1], m[1], k)] : m));
   return {
@@ -238,6 +241,7 @@ function interpolate() {
 }
 
 const predictor = new Predictor();
+const mineView = new MineView();
 // Heure du serveur estimée (même référence que les instantanés) : sert aux micro-jeux de réflexe.
 const serverNow = () => performance.now() / 1000 - (clockOffset ?? 0);
 const micro = new MicroOverlay($('#micro'), { send: (m) => conn?.send(m), serverNow, sfx, nameOf: (id) => (id === 'ghost' ? '👻 Fantôme' : hud?.roster?.get(id)?.name ?? '?') });
@@ -264,8 +268,31 @@ function trajectory(st, snap) {
   return { ...sim, angle: ch.a, power: ch.p, ready: (predictor.pos ? predictor.energy : snap.you?.energy ?? 0) >= 1 };
 }
 
+// Déménagement et imposteur : valeurs des objets, vue limitée, corps, postes de tâches.
+function extrasFor(m, you) {
+  const h = m.hud;
+  if (h?.kind === 'movers' && m.phase === 'minigame') {
+    const ballLabels = {};
+    for (const [id, v, max] of h.values) ballLabels[id] = { text: `${v} €`, color: v < max ? '#ff9a9a' : '#ffd23d' };
+    return { ballLabels, vision: { r: 340, alpha: 0.86 } };
+  }
+  if (h?.kind === 'impostor') {
+    const me = you?.micro;
+    const stations = MAPS.ship.stations;
+    return {
+      bodies: h.bodies,
+      myStations: me?.role === 'crew' ? me.tasks.map(([i, prog, done]) => ({ ...stations[i], prog, done })) : [],
+      vision: m.phase === 'minigame' && h.phase === 'play' && !h.winner ? { r: me?.role === 'impostor' ? 360 : 260, alpha: 0.95 } : null,
+    };
+  }
+  return {};
+}
+
 // Petites étiquettes au-dessus des figurines selon le mini-jeu (total du vingt-et-un…).
 function badgesFor(h) {
+  if (h?.kind === 'memory') return Object.fromEntries(Object.entries(h.pairs).map(([id, n]) => [id, n ? ` 🃏${n}` : '']));
+  if (h?.kind === 'king') return h.king ? { [h.king]: ' 👑' } : null;
+  if (h?.kind === 'impostor' && h.impostors) return Object.fromEntries(h.impostors.map((id) => [id, ' 🔪']));
   if (h?.kind !== 'blackjack') return null;
   const out = {};
   for (const [id, st] of Object.entries(h.players)) out[id] = st.b ? ` 💥${st.t}` : ` 🃏${st.t}${st.s ? '✋' : ''}`;
@@ -281,9 +308,17 @@ function frame() {
   lastFrame = nowMs;
   requestAnimationFrame(frame);
   micro.frame();
+  // Jeux à une autre physique : leur propre affichage et des commandes en « stick ».
+  const special = latest?.m.hud?.kind === 'mine' && ['intro', 'minigame'].includes(latest.m.phase);
+  input.setMode(special && latest.m.phase === 'minigame' ? 'stick' : 'flick');
+  if (special) {
+    mineView.frame(frameDt, input.stickVector(), latest.m.phase === 'minigame');
+    mineView.draw(renderer.ctx, renderer.W, renderer.H, renderer.pr, new Map(latest.roster.map((r) => [r.id, r])), nowMs / 1000);
+    return;
+  }
   const st = interpolate();
   if (!st || !latest) {
-    renderer.ctx.setTransform(renderer.dpr, 0, 0, renderer.dpr, 0, 0);
+    renderer.ctx.setTransform(renderer.pr, 0, 0, renderer.pr, 0, 0);
     renderer.drawBackdrop();
     return;
   }
@@ -306,10 +341,13 @@ function frame() {
     energyMax: latest.you?.energyMax,
     pocketScale: m.hud?.kind === 'glutton' ? m.hud.scale : 1,
     tiles: m.hud?.kind === 'tiles' ? { gone: m.hud.gone, warn: m.hud.warn } : null,
-    cards: m.hud?.kind === 'blackjack' ? m.hud.cards : null,
+    cards: m.hud?.kind === 'blackjack' ? m.hud.cards : m.hud?.kind === 'memory' ? m.hud.faces : null,
+    cardTint: m.hud?.kind === 'memory' ? m.hud.owner.map((id) => (id ? latest.roster.find((r) => r.id === id)?.color : null)) : null,
+    zone: m.hud?.kind === 'king' ? { ...m.hud.zone, contested: m.hud.contested, color: latest.roster.find((r) => r.id === m.hud.king)?.color } : null,
     bombHolder: m.hud?.kind === 'bomb' ? m.hud.holder : null,
     bombHeat: m.hud?.kind === 'bomb' ? m.hud.heat : 0,
     badges: badgesFor(m.hud),
+    ...extrasFor(m, latest.you),
     touch: isTouch,
   };
   renderer.draw(currentState);

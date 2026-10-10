@@ -15,11 +15,18 @@ import { GluttonMinigame } from './minigames/GluttonMinigame.js';
 import { BombMinigame } from './minigames/BombMinigame.js';
 import { TilesMinigame } from './minigames/TilesMinigame.js';
 import { BlackjackMinigame } from './minigames/BlackjackMinigame.js';
+import { MemoryMinigame } from './minigames/MemoryMinigame.js';
+import { KingMinigame } from './minigames/KingMinigame.js';
+import { MineMinigame } from './minigames/MineMinigame.js';
+import { MoversMinigame } from './minigames/MoversMinigame.js';
+import { ImpostorMinigame } from './minigames/ImpostorMinigame.js';
 
 export function defaultRegistry() {
   return new MinigameRegistry()
     .register(RaceMinigame).register(CoinRushMinigame).register(PaletMinigame).register(GluttonMinigame)
     .register(BombMinigame).register(TilesMinigame).register(BlackjackMinigame)
+    .register(MemoryMinigame).register(KingMinigame).register(MineMinigame).register(MoversMinigame)
+    .register(ImpostorMinigame)
     .register(MicroRushMinigame).register(CrownFinale);
 }
 

@@ -94,6 +94,18 @@ export class Sfx {
       case 'bust': this.tone({ f: 300, f2: 80, d: 0.4, type: 'sawtooth', v: 0.07 }); break;
       case 'blackjack': this.tone({ f: 660, f2: 1320, d: 0.25, type: 'triangle', v: 0.08 }); break;
       case 'tileFall': this.tone({ f: 180, f2: 60, d: 0.12, type: 'triangle', v: 0.03 }); break;
+      case 'meow': this.tone({ f: 700, f2: 1100, d: 0.18, type: 'sine', v: 0.05 }); this.tone({ f: 1100, f2: 600, d: 0.2, type: 'sine', v: 0.04 }); break;
+      case 'damage': this.tone({ f: 220, f2: 160, d: 0.08, type: 'square', v: 0.04 }); break;
+      case 'broken': this.tone({ noise: true, d: 0.35, v: 0.1 }); break;
+      case 'delivered': this.tone({ f: 523, f2: 1046, d: 0.2, type: 'triangle', v: 0.07 }); break;
+      case 'meeting': this.tone({ f: 880, f2: 440, d: 0.5, type: 'sawtooth', v: 0.07 }); break;
+      case 'ejected': this.tone({ f: 400, f2: 80, d: 0.6, type: 'sine', v: 0.07 }); break;
+      case 'impostorEnd': this.tone({ f: 330, f2: 990, d: 0.4, type: 'triangle', v: 0.08 }); break;
+      case 'killSound': this.tone({ noise: true, d: 0.08, v: 0.03 }); break;
+      case 'memFlip': this.tone({ noise: true, d: 0.05, v: 0.04 }); break;
+      case 'memPair': this.tone({ f: 784, f2: 1568, d: 0.2, type: 'triangle', v: 0.07 }); break;
+      case 'hillKing': if (mine) this.tone({ f: 660, f2: 990, d: 0.15, type: 'triangle', v: 0.06 }); break;
+      case 'dig': if (mine) this.tone({ noise: true, d: 0.06, v: 0.05 }); break;
       case 'meneEnd': this.tone({ f: 523, f2: 1046, d: 0.2, type: 'triangle', v: 0.06 }); break;
       case 'shieldBreak': this.tone({ f: 1200, f2: 300, d: 0.25, type: 'triangle', v: 0.08 }); break;
       default: break;

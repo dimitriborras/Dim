@@ -35,8 +35,10 @@ export class World {
     this.bombs = [];
     this.decoys = [];
     this.pickups = []; // gérés par les mini-jeux (pièces, couronne...)
+    // Boules mobiles : boules de billard, ou objets (émoji, masse, valeur) pour certains mini-jeux.
     this.balls = (map.balls ?? []).map((b) => ({
-      id: this.nextId++, num: b.num, r: b.r ?? 19, x: b.x, y: b.y, home: { x: b.x, y: b.y },
+      id: this.nextId++, num: b.num ?? 0, r: b.r ?? 19, x: b.x, y: b.y, home: { x: b.x, y: b.y },
+      kind: b.kind ?? null, mass: b.mass ?? BALL.mass, value: b.value ?? 0, maxValue: b.value ?? 0,
       vx: 0, vy: 0, lastHitBy: null, lastHitAt: -99, active: true, backAt: 0,
     }));
     this.effects = [];
@@ -353,7 +355,10 @@ export class World {
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       const fast = Math.hypot(b.vx, b.vy);
-      if (collideWalls(b, this.map.walls, b.r, 0.8) && fast > 250) this.emit('thud', { x: Math.round(b.x), y: Math.round(b.y) });
+      if (collideWalls(b, this.map.walls, b.r, 0.8) && fast > 250) {
+        this.emit('thud', { x: Math.round(b.x), y: Math.round(b.y) });
+        this.hooks.onBallImpact?.(b, fast); // objets fragiles
+      }
       const pk = pocketAt(this.map, b.x, b.y);
       if (pk) {
         b.active = false;
@@ -369,7 +374,8 @@ export class World {
       for (let j = i + 1; j < balls.length; j++) {
         const a = balls[i];
         const b = balls[j];
-        const hit = this.bounce(a, b, a.r + b.r, 1, 1, BALL.restitution);
+        const hit = this.bounce(a, b, a.r + b.r, a.mass ?? 1, b.mass ?? 1, BALL.restitution);
+        if (hit > 200) { this.hooks.onBallImpact?.(a, hit); this.hooks.onBallImpact?.(b, hit); }
         if (hit > 0) {
           // La boule percutée hérite de l'auteur du coup.
           const [src, dst] = Math.hypot(a.vx, a.vy) < Math.hypot(b.vx, b.vy) ? [a, b] : [b, a];
@@ -385,7 +391,7 @@ export class World {
         const vp = Math.hypot(p.vx, p.vy);
         const vb = Math.hypot(b.vx, b.vy);
         const shield = t < p.bubbleUntil;
-        const hit = this.bounce(p, b, PLAYER.radius + b.r, shield ? 1e6 : p.mass ?? 1, BALL.mass, BALL.playerRestitution);
+        const hit = this.bounce(p, b, PLAYER.radius + b.r, shield ? 1e6 : p.mass ?? 1, b.mass ?? BALL.mass, BALL.playerRestitution);
         if (hit <= 0) continue;
         if (vp >= vb) {
           const who = this.creditOf(p); // la figurine (ou celui qui l'a lancée) a tapé la boule
@@ -633,7 +639,7 @@ export class World {
       })),
       traps: this.traps.map((tr) => [tr.id, r(tr.x), r(tr.y), t >= tr.armAt ? 1 : 0]),
       bombs: this.bombs.map((b) => [b.id, r(b.x), r(b.y), Math.max(0, Math.round((b.explodeAt - t) * 10) / 10)]),
-      balls: this.balls.filter((b) => b.active).map((b) => [b.id, r(b.x), r(b.y), b.num]),
+      balls: this.balls.filter((b) => b.active).map((b) => (b.kind ? [b.id, r(b.x), r(b.y), b.num, b.kind, b.r] : [b.id, r(b.x), r(b.y), b.num])),
       decoys: this.decoys.map((d) => [d.id, d.owner, r(d.x), r(d.y), Math.round(Math.atan2(d.vy, d.vx) * 100) / 100]),
       pickups: this.pickups.map((pk) => [pk.id, pk.kind, r(pk.x), r(pk.y)]),
     };
@@ -647,7 +653,7 @@ export function resetBody(p, pos) {
     state: 'alive', fallUntil: 0, respawnAt: 0,
     invulnUntil: 0, flingUntil: 0, toppleUntil: 0, pendingFlick: null, settled: true, slowUntil: 0, slipUntil: 0,
     airborneUntil: 0, bubbleUntil: 0, lastHitBy: null, lastHitAt: -99,
-    moveAngle: null, speedFactor: 1, holed: false, safe: { x: pos.x, y: pos.y },
+    moveAngle: null, speedFactor: 1, holed: false, safe: { x: pos.x, y: pos.y }, lastFlickAt: -99,
   });
   p.actions.length = 0;
   if (p.inv) InventorySystem.applyStats(p); // atouts : masse, charges, bouée…

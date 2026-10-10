@@ -41,6 +41,12 @@ export class Hud {
       if (e.target.closest('[data-reroll]')) this.send({ t: 'reroll' });
     });
     $('#lobby').addEventListener('click', (e) => this.onLobbyClick(e));
+    $('#vote').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-vote]');
+      if (!b || b.disabled) return;
+      this.send({ t: 'mg', k: 'choice', v: Number(b.dataset.vote) });
+      b.classList.add('picked');
+    });
     $('#lobby').addEventListener('change', (e) => {
       if (e.target.id === 'rounds') this.send({ t: 'settings', rounds: Number(e.target.value) });
     });
@@ -138,6 +144,24 @@ export class Hud {
       case 'bust': if (ev.id === youId) this.announce(`💥 SAUTÉ ! (${ev.total})`, 'bad'); else this.pushFeed(`💥 ${this.name(ev.id)} saute à ${ev.total}`); break;
       case 'blackjack': if (ev.id === youId) this.announce('🃏 VINGT-ET-UN !', 'good'); else this.pushFeed(`🃏 ${this.name(ev.id)} fait 21 !`); break;
       case 'stand': this.pushFeed(`✋ ${this.name(ev.id)} reste à ${ev.total}`); break;
+      case 'delivered': if (ev.id === youId) this.announce(`🚚 +${ev.value} € ${ev.kind}`, 'good'); else this.pushFeed(`🚚 ${ev.kind} livré (${ev.value} €)${ev.id ? ` par ${this.name(ev.id)}` : ''}`); break;
+      case 'broken': this.pushFeed(`💥 ${ev.kind} cassé !`); break;
+      case 'meeting':
+        this.announce(`📢 RÉUNION !<small>${plain(ev.by)} a trouvé le corps de ${plain(ev.body)}</small>`, 'bad');
+        break;
+      case 'ejected':
+        if (!ev.id) this.announce('🗳️ Personne n\'est éjecté…');
+        else this.announce(`🚀 ${plain(ev.id)} est éjecté<small>${ev.impostor ? 'C\'était l\'imposteur !' : 'Ce n\'était pas l\'imposteur…'}</small>`, ev.impostor ? 'good' : 'bad');
+        break;
+      case 'impostorEnd': {
+        const names = ev.impostors.map((id) => plain(id)).join(' et ');
+        this.announce(`${ev.winner === 'crew' ? '👨‍🚀 L\'équipage gagne !' : '🔪 L\'imposteur gagne !'}<small>Imposteur : ${names}</small>`, 'good');
+        this.pushFeed(`🔪 L'imposteur était ${ev.impostors.map((id) => this.name(id)).join(' et ')}`);
+        break;
+      }
+      case 'memPair': if (ev.id === youId) this.announce(`🃏 Paire ! ${ev.face}${ev.face}`, 'good'); else this.pushFeed(`🃏 ${this.name(ev.id)} trouve ${ev.face}${ev.face}`); break;
+      case 'memMiss': if (ev.id === youId) this.announce('❌ Pas la même…', 'bad'); break;
+      case 'hillMove': this.announce('👑 La colline se déplace !'); break;
       case 'meneEnd':
         if (ev.scores?.[youId] !== undefined) this.announce(`🎯 Mène terminée<small>+${ev.scores[youId]} point${ev.scores[youId] > 1 ? 's' : ''}</small>`, ev.scores[youId] > 0 ? 'good' : '');
         break;
@@ -173,8 +197,10 @@ export class Hud {
     this.renderCenter(snap, m, you);
     this.renderLobby(snap, m);
     this.hudKind = m.hud?.kind ?? null;
+    this.renderVote(snap, m, you);
     this.renderInventory(you);
     this.renderContract(you);
+    this.youMicro = you?.micro ?? null;
     this.renderMiniHud(m);
     this.renderFeed();
     if (this.shopOpen) this.renderShop(you, m);
@@ -191,11 +217,16 @@ export class Hud {
       if (m.hud?.kind === 'crown') return `👑 ${(m.hud.held[r.id] ?? 0).toFixed(0)}s`;
       if (m.hud?.kind === 'palet') return `🎯 ${m.hud.scores[r.id] ?? 0}`;
       if (m.hud?.kind === 'glutton' || m.hud?.kind === 'tiles') return m.hud.out.includes(r.id) ? '💀' : '🟢';
+      if (m.hud?.kind === 'memory') return `🃏 ${m.hud.pairs[r.id] ?? 0}`;
+      if (m.hud?.kind === 'movers') return `${m.hud.delivered[r.id] ?? 0} €`;
+      if (m.hud?.kind === 'impostor') return m.hud.alive.includes(r.id) ? (m.hud.impostors?.includes(r.id) ? '🔪' : '🟢') : '💀';
+      if (m.hud?.kind === 'king') return `👑 ${(m.hud.held[r.id] ?? 0).toFixed(0)}s`;
+      if (m.hud?.kind === 'mine') return m.hud.finished.includes(r.id) ? `🚪 ${m.hud.finished.indexOf(r.id) + 1}` : '⛏️';
       if (m.hud?.kind === 'bomb') return m.hud.out.includes(r.id) ? '💀' : m.hud.holder === r.id ? '💣' : '🟢';
       if (m.hud?.kind === 'blackjack') { const st = m.hud.players[r.id]; return st ? (st.b ? `💥${st.t}` : `${st.t}${st.s ? '✋' : ''}`) : ''; }
       return inMatch ? `${r.pts} pts` : `🎱 ${r.ls ?? 0}${r.host ? ' ⭐' : ''}`;
     };
-    const unit = { coins: 'jetons', crown: 'couronne', palet: 'cible', glutton: 'en vie', tiles: 'en vie', bomb: 'en vie', blackjack: 'total', micro: 'réussis' }[m.hud?.kind] ?? 'points';
+    const unit = { movers: 'livré', impostor: 'état', coins: 'jetons', crown: 'couronne', palet: 'cible', glutton: 'en vie', tiles: 'en vie', bomb: 'en vie', blackjack: 'total', memory: 'paires', king: 'colline', mine: 'sortie', micro: 'réussis' }[m.hud?.kind] ?? 'points';
     const head = inMatch ? `<div class="head"><span>Classement</span><span>${unit}</span></div>` : '<div class="head"><span>Joueurs</span></div>';
     $('#scoreboard').innerHTML = head + rows.map((r) => `
       <div class="row ${r.id === this.youId ? 'me' : ''} ${r.conn ? '' : 'off'}">
@@ -290,8 +321,14 @@ export class Hud {
       : '';
     if ($('#gear').innerHTML !== perks) $('#gear').innerHTML = perks;
     $('#wallet').innerHTML = you.inMatch ? `💰 ${you.credits}<br>🏆 ${you.points}` : '💰 —<br>🏆 —';
-    const g = this.hudKind === 'blackjack' ? { id: '_stand', charges: 1, cooldown: 0 } : inv.gadget;
-    const icon = g?.id === '_stand' ? '✋' : g ? this.items.get(g.id)?.icon : null;
+    const imp = this.hudKind === 'impostor' ? you.micro : null;
+    let g = this.hudKind === 'blackjack' ? { id: '_stand', charges: 1, cooldown: 0 } : inv.gadget;
+    let icon = g?.id === '_stand' ? '✋' : g ? this.items.get(g.id)?.icon : null;
+    if (imp) {
+      // L'imposteur : 🔪 quand une victime est à portée, 📢 près d'un corps, sinon le rôle en grisé.
+      g = imp.canKill || imp.canReport ? { id: '_stand', charges: 1, cooldown: 0 } : null;
+      icon = imp.canKill ? '🔪' : imp.canReport ? '📢' : imp.role === 'impostor' ? '🔪' : '📢';
+    }
     const btn = $('#itemBtn');
     btn.classList.toggle('empty', !g || g.charges <= 0);
     const cd = g && g.cooldown > 0 ? 100 : 0;
@@ -358,6 +395,34 @@ export class Hud {
     } else if (m.hud?.kind === 'glutton') {
       const html = `<div class="mini-pill">🕳️ Poches ×${m.hud.scale.toFixed(1)} · ${m.hud.alive.length} en vie</div>`;
       if (el.innerHTML !== html) el.innerHTML = html;
+    } else if (m.hud?.kind === 'mine') {
+      const out = m.hud.finished.length;
+      const html = `<div class="mini-pill">⛏️ Glisse le doigt pour avancer et creuser${out ? ` · 🚪 ${out} sorti${out > 1 ? 's' : ''}` : ''}</div>`;
+      if (el.innerHTML !== html) el.innerHTML = html;
+    } else if (m.hud?.kind === 'movers') {
+      const h = m.hud;
+      const html = `<div class="mini-pill">🚚 Livré <b>${h.team} €</b> / objectif ${h.quota} €${h.broken ? ` · 💥 ${h.broken} cassé${h.broken > 1 ? 's' : ''}` : ''}</div>`;
+      if (el.innerHTML !== html) el.innerHTML = html;
+    } else if (m.hud?.kind === 'impostor') {
+      const me = this.youMicro;
+      const role = me?.role === 'impostor' ? `🔪 Imposteur${me.killIn > 0 ? ` · prêt dans ${Math.ceil(me.killIn)} s` : ' · prêt !'}` : '👨‍🚀 Équipage';
+      const html = `<div class="mini-pill ${me?.role === 'impostor' ? 'hot' : ''}">${role} · 🔧 tâches ${m.hud.tasks} %</div>`;
+      // Le rôle secret, annoncé une fois au début de la manche.
+      if (me?.role && this.roleShownFor !== m.round) {
+        this.roleShownFor = m.round;
+        const mates = me.mates?.length ? `<small>Complice : ${me.mates.map((id) => esc(this.roster.get(id)?.name ?? '?')).join(', ')}</small>` : '';
+        this.announce(me.role === 'impostor'
+          ? `🔪 Tu es l'IMPOSTEUR<small>Élimine en douce (bouton rond), ne te fais pas voir</small>${mates}`
+          : '👨‍🚀 Tu fais partie de l\'ÉQUIPAGE<small>Fais tes tâches (cercles jaunes) et démasque l\'imposteur</small>', me.role === 'impostor' ? 'bad' : 'good');
+      }
+      if (el.innerHTML !== html) el.innerHTML = html;
+    } else if (m.hud?.kind === 'memory') {
+      const html = '<div class="mini-pill">🃏 Arrête-toi sur une carte pour la retourner · trouve sa jumelle</div>';
+      if (el.innerHTML !== html) el.innerHTML = html;
+    } else if (m.hud?.kind === 'king') {
+      const mine = m.hud.king === this.youId;
+      const html = `<div class="mini-pill ${mine ? 'big' : ''}">${mine ? '👑 Tu tiens la colline !' : m.hud.contested ? '⚔️ Colline disputée : personne ne marque' : '👑 Reste SEUL dans la zone'} · bouge dans ${Math.ceil(m.hud.moveIn ?? 0)} s</div>`;
+      if (el.innerHTML !== html) el.innerHTML = html;
     } else if (m.hud?.kind === 'bomb') {
       const mine = m.hud.holder === this.youId;
       const html = `<div class="mini-pill ${mine ? 'hot' : ''}">${mine ? '💣 TU AS LA BOMBE : refile-la !' : `💣 ${m.hud.alive.length} en vie`}</div>`;
@@ -372,7 +437,7 @@ export class Hud {
     } else if (el.innerHTML) {
       el.innerHTML = '';
     }
-    document.body.classList.toggle('race-on', ['race', 'palet', 'glutton', 'bomb', 'tiles', 'blackjack'].includes(m.hud?.kind));
+    document.body.classList.toggle('race-on', ['race', 'palet', 'glutton', 'bomb', 'tiles', 'blackjack', 'mine', 'memory', 'king'].includes(m.hud?.kind));
   }
 
   renderFeed() {
@@ -412,6 +477,34 @@ export class Hud {
     const reroll = `<button class="btn small ${free ? 'primary' : ''}" data-reroll="1" ${open && (free || you.credits >= 15) ? '' : 'disabled'}>🔄 Relancer ${free ? '(gratuit)' : '(15 💰)'}</button>`;
     const owned = `<div class="owned">Atouts : ${inv.perks.map((id) => this.items.get(id)?.icon).join(' ') || '—'} · Gadget : ${inv.gadget ? this.items.get(inv.gadget.id)?.icon : '—'}</div>`;
     $('#shopItems').innerHTML = `<div class="capsules">${cards}</div>${empty}<div class="shop-foot">${reroll}<span class="wallet">💰 ${you.credits}</span></div>${owned}`;
+  }
+
+  // Réunion de l'imposteur : on vote pour éjecter quelqu'un (ou on passe).
+  renderVote(snap, m, you) {
+    const el = $('#vote');
+    const h = m.hud;
+    const show = h?.kind === 'impostor' && h.phase === 'meeting' && m.phase === 'minigame';
+    el.hidden = !show;
+    document.body.classList.toggle('vote-on', show);
+    if (!show) { this.voteKey = ''; return; }
+    const me = you?.micro;
+    const canVote = h.alive.includes(this.youId) && !me?.vote;
+    const key = JSON.stringify([h.alive, h.voted, canVote, Math.ceil(h.meetingLeft), me?.vote]);
+    if (key === this.voteKey) return;
+    this.voteKey = key;
+    const rows = h.alive.map((id, i) => {
+      const r = this.roster.get(id);
+      const self = id === this.youId;
+      const mate = me?.mates?.includes(id);
+      return `<button class="vote-row ${me?.vote === id ? 'picked' : ''}" data-vote="${i}" ${canVote && !self ? '' : 'disabled'}>
+        <span class="dot" style="background:${r?.color ?? '#999'}"></span><span class="nm">${esc(r?.name ?? '?')}${self ? ' (toi)' : ''}${mate ? ' 🔪' : ''}</span>
+        ${h.voted.includes(id) ? '<span class="tag">a voté</span>' : ''}</button>`;
+    }).join('');
+    el.innerHTML = `<h2>📢 Réunion d'urgence</h2>
+      <p>${esc(this.roster.get(h.reporter)?.name ?? '?')} a trouvé le corps de ${esc(this.roster.get(h.found)?.name ?? '?')}. Qui est l'imposteur ?</p>
+      <div class="vote-list">${rows}</div>
+      <div class="vote-foot"><button class="btn small ${me?.vote === 'skip' ? 'primary' : ''}" data-vote="-1" ${canVote ? '' : 'disabled'}>⏭ Passer</button><span>⏱ ${Math.ceil(h.meetingLeft)} s</span></div>
+      ${h.alive.includes(this.youId) ? '' : '<p class="note">💀 Tu es éliminé : tu ne votes plus.</p>'}`;
   }
 
   renderFullTable(snap, show) {

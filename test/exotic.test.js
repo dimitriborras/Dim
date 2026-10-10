@@ -88,10 +88,10 @@ test('Le match pioche dans tous les mini-jeux de palet', () => {
   room.join({ send() {} }, { name: 'H' });
   room.addBot();
   const seen = new Set();
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 25; i++) {
     room.match.start(8);
     for (const id of room.match.plan) seen.add(id);
     room.match.enterLobby();
   }
-  for (const id of ['bomb', 'tiles', 'blackjack', 'palet', 'glutton']) assert.ok(seen.has(id), `${id} au programme`);
+  for (const id of ['bomb', 'tiles', 'blackjack', 'palet', 'glutton', 'memory', 'king', 'mine', 'movers', 'impostor']) assert.ok(seen.has(id), `${id} au programme`);
 });

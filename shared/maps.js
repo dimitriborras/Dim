@@ -299,9 +299,112 @@ export const CARD_TABLE = closedTable({
   ],
 });
 
+// Le mémory géant : 16 cartes (8 paires) en 4 × 4 sur le tapis, départ à gauche.
+export const MEMORY_TABLE = closedTable({
+  id: 'memory',
+  name: 'Le mémory géant',
+  felt: { x: 100, y: 100, w: 1000, h: 660 },
+  cards: Array.from({ length: 16 }, (_, i) => ({ x: 360 + (i % 4) * 180, y: 125 + Math.floor(i / 4) * 160, w: 140, h: 135 })),
+  spawns: [
+    { x: 170, y: 180 }, { x: 170, y: 280 }, { x: 170, y: 380 }, { x: 170, y: 480 },
+    { x: 170, y: 580 }, { x: 170, y: 680 }, { x: 250, y: 330 }, { x: 250, y: 530 },
+  ],
+});
+
+// Le roi de la colline : le billard, avec une zone qui se déplace (voir KingMinigame).
+export const KING_SPOTS = [
+  { x: 800, y: 500 }, { x: 420, y: 330 }, { x: 1180, y: 670 }, { x: 1180, y: 330 }, { x: 420, y: 670 }, { x: 800, y: 270 }, { x: 800, y: 730 },
+];
+
+// La maison du déménagement (R.E.P.O.) : trois pièces reliées par des portes, le camion à droite.
+const HOUSE = { x: 100, y: 100, w: 1500, h: 860 };
+const DOOR = 170;
+export const MOVERS_HOUSE = closedTable({
+  id: 'house',
+  name: 'La maison',
+  felt: HOUSE,
+  theme: 'house',
+  obstacles: [
+    // Cloisons avec une porte au milieu.
+    { x: 600, y: HOUSE.y, w: 30, h: (HOUSE.h - DOOR) / 2 },
+    { x: 600, y: HOUSE.y + (HOUSE.h + DOOR) / 2, w: 30, h: (HOUSE.h - DOOR) / 2 },
+    { x: 1100, y: HOUSE.y, w: 30, h: 220 },
+    { x: 1100, y: HOUSE.y + 220 + DOOR + 60, w: 30, h: HOUSE.h - 220 - DOOR - 60 },
+    // Quelques meubles fixes.
+    { x: 250, y: 300, w: 140, h: 60, style: 'chalk' },
+    { x: 820, y: 640, w: 120, h: 60, style: 'chalk' },
+  ],
+  truck: { x: 1380, y: 380, w: 200, h: 300 },
+  waypoints: [{ x: 615, y: 530 }, { x: 1115, y: 435 }],
+  balls: [
+    { x: 200, y: 180, kind: '🏺', value: 120, r: 20, mass: 0.7 },
+    { x: 470, y: 820, kind: '📺', value: 200, r: 26, mass: 1.4 },
+    { x: 330, y: 560, kind: '🎻', value: 150, r: 22, mass: 0.8 },
+    { x: 170, y: 870, kind: '🪴', value: 60, r: 22, mass: 0.9 },
+    { x: 480, y: 200, kind: '🧸', value: 40, r: 20, mass: 0.5 },
+    { x: 760, y: 200, kind: '⏰', value: 70, r: 18, mass: 0.6 },
+    { x: 960, y: 300, kind: '🖼️', value: 90, r: 22, mass: 0.7 },
+    { x: 720, y: 860, kind: '🎹', value: 320, r: 36, mass: 3.2 },
+    { x: 980, y: 820, kind: '💎', value: 250, r: 16, mass: 0.4 },
+    { x: 860, y: 460, kind: '🐈‍⬛', value: 0, r: 26, mass: 2.4, cat: true },
+  ],
+  spawns: [
+    { x: 1250, y: 200 }, { x: 1250, y: 300 }, { x: 1250, y: 760 }, { x: 1250, y: 860 },
+    { x: 1450, y: 200 }, { x: 1450, y: 860 }, { x: 1200, y: 500 }, { x: 1200, y: 620 },
+  ],
+});
+
+// Le vaisseau de l'imposteur (Among Us) : quatre salles autour d'un couloir, six postes de tâches.
+const SHIP = { x: 100, y: 100, w: 1400, h: 900 };
+export const IMPOSTOR_SHIP = closedTable({
+  id: 'ship',
+  name: 'Le vaisseau',
+  felt: SHIP,
+  theme: 'ship',
+  obstacles: [
+    // Cloisons horizontale et verticale, percées de portes.
+    { x: 100, y: 520, w: 260, h: 30 }, { x: 520, y: 520, w: 380, h: 30 }, { x: 1060, y: 520, w: 440, h: 30 },
+    { x: 780, y: 100, w: 30, h: 250 }, { x: 780, y: 690, w: 30, h: 310 },
+    { x: 380, y: 250, w: 60, h: 60, style: 'chalk' }, { x: 1150, y: 780, w: 60, h: 60, style: 'chalk' },
+  ],
+  // Portes, pour que les bots passent d'une salle à l'autre.
+  waypoints: [{ x: 440, y: 535 }, { x: 980, y: 535 }, { x: 795, y: 440 }, { x: 795, y: 600 }],
+  stations: [
+    { x: 220, y: 200, icon: '🔧', name: 'Réparer les fils' },
+    { x: 640, y: 420, icon: '⛽', name: 'Remplir le réservoir' },
+    { x: 1350, y: 220, icon: '📡', name: 'Aligner l\'antenne' },
+    { x: 260, y: 880, icon: '🧪', name: 'Analyser l\'échantillon' },
+    { x: 960, y: 880, icon: '🗑️', name: 'Vider les déchets' },
+    { x: 1380, y: 660, icon: '🛰️', name: 'Lancer le diagnostic' },
+  ],
+  spawns: [
+    { x: 760, y: 590 }, { x: 840, y: 590 }, { x: 700, y: 450 }, { x: 900, y: 450 },
+    { x: 700, y: 640 }, { x: 900, y: 640 }, { x: 800, y: 420 }, { x: 800, y: 660 },
+  ],
+});
+
+// Support technique de la Mine : la vraie carte est la grille de shared/game/mine.js.
+// Ce plateau fixe sert seulement à porter les figurines dans la simulation commune.
+export const MINE_STAGE = {
+  id: 'mine',
+  name: 'La Mine',
+  width: 800,
+  height: 600,
+  follow: false,
+  platforms: [{ x: 0, y: 0, w: 800, h: 600 }],
+  holes: [],
+  movingPlatforms: [],
+  walls: [],
+  bumpers: [],
+  springs: [],
+  hazardEdges: false,
+  spawns: Array.from({ length: 8 }, (_, i) => ({ x: 100 + (i % 4) * 150, y: 200 + Math.floor(i / 4) * 200 })),
+  center: { x: 400, y: 300 },
+};
+
 export const MAPS = {
   arena: ARENA, race: RACE_TRACK, micro: MICRO_TABLE, golf: MICRO_GOLF, palet: PALET_LANE, duel: DUEL_ISLANDS,
-  bomb: BOMB_BOX, tiles: TILE_FLOOR, cards: CARD_TABLE,
+  bomb: BOMB_BOX, tiles: TILE_FLOOR, cards: CARD_TABLE, memory: MEMORY_TABLE, mine: MINE_STAGE, house: MOVERS_HOUSE, ship: IMPOSTOR_SHIP,
 };
 
 // La poche dans laquelle se trouve ce point, ou null.

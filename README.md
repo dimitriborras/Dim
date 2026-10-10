@@ -138,7 +138,25 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
     ne l'abîme pas. Le dernier debout gagne ;
   - *Vingt-et-un* (le blackjack) : 15 cartes face cachée ; chaque pichenette retourne la carte où elle s'arrête
     et ajoute sa valeur ; le plus proche de 21 sans dépasser gagne. Bouton rond : « Je reste ». Percuter un
-    adversaire en pleine glissade change sa carte.
+    adversaire en pleine glissade change sa carte ;
+  - *Le mémory géant* (le jeu de société) : 16 cartes face cachée ; s'arrêter sur une carte la retourne pour
+    tout le monde, la deuxième identique fait une paire. Regarder les cartes des autres paie ;
+  - *Le roi de la colline* : on marque tant qu'on est SEUL dans la zone ; à plusieurs, personne. La zone bouge.
+- **Mini-jeux à une autre physique** :
+  - *La Mine* (Terraria × Minecraft) : vue de côté, gravité, tout est noir sauf autour de sa lampe, une flèche
+    montre la sortie. On avance en creusant (terre rapide, pierre lente, roche mère infranchissable, marche
+    automatique d'une case) ; le premier sorti gagne. Commande en joystick : on pose le doigt et on glisse dans
+    une direction (flèches/ZQSD au clavier). La mine est générée par une graine identique sur le serveur et le
+    téléphone : seules les cases creusées circulent, et sa propre figurine est prédite sans attendre le réseau.
+    Les bots ont un vrai calcul d'itinéraire (gravité comprise) et un rythme plus lent qu'un humain attentif ;
+  - *Le déménagement* (R.E.P.O.) : 2 minutes dans une maison sombre, chacun avec sa lampe. On pousse des objets
+    fragiles jusqu'au camion ; chaque choc violent leur coûte de la valeur, jusqu'à les casser ; le piano est
+    lourd (mieux à plusieurs) ; le chat bondit sur tout ce qui bouge. Chacun marque ce qu'il livre, l'équipe a
+    un objectif commun ;
+  - *L'imposteur* (Among Us) : un imposteur caché (deux à partir de 7). L'équipage fait ses tâches (rester
+    immobile sur ses postes) ; l'imposteur élimine en douce au bouton rond. Vue limitée à une lampe, morts
+    révélés seulement en réunion. Un corps signalé déclenche une réunion et un vote d'éjection. L'équipage gagne
+    en finissant les tâches ou en éjectant l'imposteur ; l'imposteur s'il égale l'équipage ou tient jusqu'au bout.
 - **Finale** : *La couronne* — temps de possession ; un « Carton ! » sur le porteur la lui vole.
 - **La Mêlée** (remplace l'ancien combat au pistolet) : 40 s sur le billard, gadgets autorisés. Empocher un
   adversaire : 3 pts (puis 1 et 0 sur la même victime) ; Carton : +1 ; boule numérotée empochée : +1 (3 au plus) ;

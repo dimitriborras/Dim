@@ -351,6 +351,31 @@ export class Renderer {
         g.fillStyle = gr;
         g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
       }
+      if (map.truck) {
+        // Le camion du déménagement : zone de livraison rayée.
+        ground();
+        const T = map.truck;
+        g.fillStyle = '#2f3b4f';
+        g.fillRect(T.x, T.y, T.w, T.h);
+        g.strokeStyle = '#ffd23d';
+        g.lineWidth = 10;
+        g.setLineDash([24, 16]);
+        g.strokeRect(T.x + 6, T.y + 6, T.w - 12, T.h - 12);
+        g.setLineDash([]);
+        screen();
+      }
+      if (map.stations) {
+        // Postes de tâches du vaisseau.
+        ground();
+        for (const st of map.stations) {
+          g.fillStyle = 'rgba(61, 220, 224, 0.18)';
+          g.beginPath(); g.arc(st.x, st.y, 55, 0, 7); g.fill();
+          g.strokeStyle = 'rgba(61, 220, 224, 0.7)';
+          g.lineWidth = 4;
+          g.stroke();
+        }
+        screen();
+      }
       // Cible du Palet : anneaux peints sur la piste.
       if (map.target || map.targets) {
         ground();
@@ -694,6 +719,12 @@ export class Renderer {
         push({ kind: 'text', x: ev.x, y: ev.y, text: '🛟 Sauvé !', color: '#7df9ff', life: 1, size: 18 });
         push({ kind: 'ring', x: ev.x, y: ev.y, r: 40, life: 0.4, color: '#7df9ff' });
         break;
+      case 'damage': push({ kind: 'text', x: ev.x, y: ev.y, text: `-${ev.loss} €`, color: '#ff7a7a', life: 0.9, size: 16 }); break;
+      case 'broken':
+        push({ kind: 'text', x: ev.x, y: ev.y, text: `💥 ${ev.kind} cassé !`, color: '#ff5a5a', life: 1.2, size: 20 });
+        for (let i = 0; i < 10; i++) push({ kind: 'confetti', x: ev.x, y: ev.y, a: Math.random() * 6.28, s: 80 + Math.random() * 160, life: 0.7, color: '#c9b48f' });
+        this.shake = Math.max(this.shake, 4);
+        break;
       case 'crownSteal':
         if (ev.id === youId) this.hitStopUntil = now + 0.08;
         break;
@@ -764,6 +795,23 @@ export class Renderer {
     this.drawGroundDynamic(state, now);
     this.screenTransform();
     if (state.cards && map.cards) this.drawCardLabels(map, state.cards);
+    if (map.truck) {
+      const sp = this.emojiSprite('🚚', 70);
+      const c = this.toScreen(map.truck.x + map.truck.w / 2, map.truck.y + map.truck.h / 2, 10);
+      this.blit(sp, c.x - sp.cssW / 2, c.y - sp.cssW / 2, sp.cssW, sp.cssW);
+    }
+    if (map.stations) {
+      for (const st of map.stations) {
+        const sp = this.emojiSprite(st.icon, 40);
+        const c = this.toScreen(st.x, st.y, 8);
+        this.blit(sp, c.x - sp.cssW / 2, c.y - sp.cssW / 2, sp.cssW, sp.cssW);
+      }
+    }
+    for (const [x, y] of state.bodies ?? []) {
+      const sp = this.emojiSprite('💀', 44);
+      const c = this.toScreen(x, y, 10);
+      this.blit(sp, c.x - sp.cssW / 2, c.y - sp.cssW / 2, sp.cssW, sp.cssW);
+    }
     this.drawSprites(map, state, now);
     this.drawEffects(now, state);
     this.drawOverlay(now, state, me);
@@ -834,7 +882,7 @@ export class Renderer {
     }
     for (const d of state.decoys) { ctx.moveTo(d.x + PLAYER.radius, d.y); ctx.arc(d.x, d.y, PLAYER.radius, 0, 7); }
     for (const pk of state.pickups) { const r = pk.kind === 'crown' ? 20 : 11; ctx.moveTo(pk.x + r, pk.y); ctx.arc(pk.x, pk.y, r, 0, 7); }
-    for (const b of state.balls ?? []) { ctx.moveTo(b.x + 21, b.y + 4); ctx.arc(b.x, b.y + 4, 21, 0, 7); }
+    for (const b of state.balls ?? []) { const r = (b.r ?? 19) + 2; ctx.moveTo(b.x + r, b.y + 4); ctx.arc(b.x, b.y + 4, r, 0, 7); }
     ctx.fill();
     if (state.pocketScale > 1.01 && this.currentMap?.pockets) {
       // Poches gloutonnes : le trou s'élargit par-dessus le décor.
@@ -872,14 +920,42 @@ export class Renderer {
       // Cartes du vingt-et-un : dos bleu tant qu'elles sont cachées, face blanche une fois retournées.
       this.currentMap.cards.forEach((c, i) => {
         const v = state.cards[i];
+        const tint = state.cardTint?.[i];
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.fillRect(c.x + 5, c.y + 7, c.w, c.h);
+        ctx.globalAlpha = tint ? 0.55 : 1;
         ctx.fillStyle = v === null ? '#2a5fcc' : '#fff7e6';
         ctx.fillRect(c.x, c.y, c.w, c.h);
-        ctx.strokeStyle = v === null ? '#9fc3ff' : '#c9b48f';
-        ctx.lineWidth = 4;
+        ctx.globalAlpha = 1;
+        // Paire gagnée : bordure à la couleur du joueur.
+        ctx.strokeStyle = tint ?? (v === null ? '#9fc3ff' : '#c9b48f');
+        ctx.lineWidth = tint ? 10 : 4;
         ctx.strokeRect(c.x + 6, c.y + 6, c.w - 12, c.h - 12);
       });
+    }
+    for (const st of state.myStations ?? []) {
+      // Mes tâches : anneau jaune qui se remplit (vert quand c'est fait).
+      ctx.strokeStyle = st.done ? '#3ddc84' : '#ffd23d';
+      ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.arc(st.x, st.y, 62, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (st.done ? 1 : Math.max(0.04, st.prog))); ctx.stroke();
+      if (!st.done && st.prog === 0) {
+        ctx.setLineDash([8, 10]);
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(st.x, st.y, 62, 0, 7); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+    if (state.zone) {
+      // Roi de la colline : zone dorée qui pulse ; bordure à la couleur du roi, rouge si disputée.
+      const z = state.zone;
+      ctx.fillStyle = `rgba(255, 210, 61, ${0.18 + 0.08 * Math.sin(now * 5)})`;
+      ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, 7); ctx.fill();
+      ctx.strokeStyle = z.contested ? '#ff4d6d' : z.color ?? '#ffd23d';
+      ctx.lineWidth = 8;
+      ctx.setLineDash(z.contested ? [14, 10] : []);
+      ctx.lineDashOffset = -now * 40;
+      ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, 7); ctx.stroke();
+      ctx.setLineDash([]);
     }
     if (state.microTarget) {
       // Cible du micro-jeu « Dans le cercle ! ».
@@ -1022,6 +1098,20 @@ export class Renderer {
         }
         case 6: this.drawBomb(it.b, now, s); break;
         case 8: {
+          if (it.b.kind) {
+            // Objet (déménagement) : un émoji posé au sol, et sa valeur au-dessus.
+            const r = it.b.r ?? 20;
+            const sp = this.emojiSprite(it.b.kind, r * 2.3);
+            const c = this.toScreen(it.b.x, it.b.y, r * 0.9);
+            this.blit(sp, c.x - sp.cssW / 2, c.y - sp.cssW / 2, sp.cssW, sp.cssW);
+            const lab = state.ballLabels?.[it.b.id];
+            if (lab) {
+              const ls = this.labelSprite(lab.text, lab.color);
+              const t = this.toScreen(it.b.x, it.b.y, r * 2 + 22);
+              this.blit(ls, t.x - ls.cssW / 2, t.y - ls.cssH / 2, ls.cssW, ls.cssH);
+            }
+            break;
+          }
           // Boule qui roule : le numéro tourne avec le déplacement.
           const sp = this.bumperSprite(19, it.b.num);
           const c = this.toScreen(it.b.x, it.b.y, 17);
@@ -1149,9 +1239,15 @@ export class Renderer {
   drawCardLabels(map, cards) {
     map.cards.forEach((c, i) => {
       const v = cards[i];
+      const p = this.toScreen(c.x + c.w / 2, c.y + c.h / 2, 0);
+      if (typeof v === 'string') {
+        // Mémory : un dessin (émoji) sur la carte retournée.
+        const sp = this.emojiSprite(v, 70);
+        this.blit(sp, p.x - sp.cssW / 2, p.y - sp.cssW / 2, sp.cssW, sp.cssW);
+        return;
+      }
       const label = v === null ? '?' : v === 11 ? 'A' : String(v);
       const sp = this.labelSprite(label, v === null ? '#cfe0ff' : v >= 10 ? '#d0213a' : '#1b1b2e', 60);
-      const p = this.toScreen(c.x + c.w / 2, c.y + c.h / 2, 0);
       this.blit(sp, p.x - sp.cssW / 2, p.y - sp.cssH / 2, sp.cssW, sp.cssH);
     });
   }
@@ -1287,6 +1383,31 @@ export class Renderer {
   // ------------------------------------------------------------ couche d'interface (écran)
   drawOverlay(now, state, me) {
     const { ctx, W, H } = this;
+    if (state.vision && me && me.s !== 'dead') {
+      // Vue limitée : tout est sombre sauf autour de sa lampe.
+      const pr = this.pr;
+      if (!this.fog || this.fog.width !== Math.round(W * pr) || this.fog.height !== Math.round(H * pr)) {
+        this.fog = makeCanvas(W * pr, H * pr);
+      }
+      const f = this.fog.getContext('2d');
+      f.setTransform(pr, 0, 0, pr, 0, 0);
+      f.globalCompositeOperation = 'source-over';
+      f.fillStyle = `rgba(4, 4, 14, ${state.vision.alpha ?? 0.94})`;
+      f.fillRect(0, 0, W, H);
+      f.globalCompositeOperation = 'destination-out';
+      const c = this.toScreen(me.x, me.y, 20);
+      const R = state.vision.r * this.cam.scale;
+      const lg = f.createRadialGradient(c.x, c.y, R * 0.35, c.x, c.y, R);
+      lg.addColorStop(0, 'rgba(0,0,0,1)');
+      lg.addColorStop(1, 'rgba(0,0,0,0)');
+      f.fillStyle = lg;
+      f.beginPath(); f.arc(c.x, c.y, R, 0, 7); f.fill();
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(this.fog, 0, 0);
+      ctx.restore();
+      this.screenTransform();
+    }
     this.dmgDirs = this.dmgDirs.filter((d) => now - d.born < 0.9);
     if (me && this.dmgDirs.length) {
       const c = this.toScreen(me.x, me.y, 20);
@@ -1300,7 +1421,8 @@ export class Renderer {
         ctx.beginPath(); ctx.arc(c.x, c.y, R, da - 0.32, da + 0.32); ctx.stroke();
       }
     }
-    if (me) {
+    // Repères des joueurs hors écran : pas quand la vue est limitée (ils trahiraient le noir).
+    if (me && !state.vision) {
       const c = this.toScreen(me.x, me.y, 20);
       const m = 18;
       for (const o of state.players) {

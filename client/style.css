@@ -381,3 +381,15 @@ b.ok { color: var(--good); } b.bad { color: var(--bad); }
 .mini-pill.hot { background: #8a2338; border-color: #ff5a5a; animation: pulse .4s infinite alternate; }
 .mini-pill.big { font-size: 16px; padding: 6px 16px; }
 .mini-pill b { color: var(--accent); font-size: 1.2em; }
+/* Réunion de l'imposteur */
+#vote { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, 94vw); max-height: 86vh; overflow: auto; background: var(--panel-solid); border: 2px solid #ff5a5a; border-radius: 20px; padding: 14px 16px; z-index: 12; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+#vote h2 { margin: 0 0 4px; color: #ff7a7a; }
+#vote p { margin: 4px 0 10px; color: var(--muted); }
+.vote-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.vote-row { display: flex; align-items: center; gap: 8px; padding: 10px; border: 0; border-radius: 12px; background: #3a4677; color: var(--text); font: inherit; font-weight: 800; cursor: pointer; text-align: left; }
+.vote-row:disabled { opacity: .6; cursor: default; }
+.vote-row.picked { outline: 3px solid var(--accent); }
+.vote-row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vote-row .tag { font-size: 11px; color: var(--good); }
+.vote-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-weight: 900; }
+body.vote-on #bottom { display: none; }
