@@ -259,7 +259,18 @@ export class Renderer {
       }
       // Plateau en bois.
       ground();
-      for (const r of map.platforms) {
+      for (const [ti, r] of map.platforms.entries()) {
+        if (map.tiles) {
+          // Carrelage : dalles bleues et blanches en damier, joints sombres.
+          const col = ti % 11;
+          const row = Math.floor(ti / 11);
+          g.fillStyle = (col + row) % 2 ? '#5aa7e8' : '#e8f1fb';
+          g.fillRect(r.x, r.y, r.w, r.h);
+          g.strokeStyle = 'rgba(20, 30, 60, 0.55)';
+          g.lineWidth = 4;
+          g.strokeRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+          continue;
+        }
         g.fillStyle = '#c8955c';
         g.fillRect(r.x, r.y, r.w, r.h);
         g.strokeStyle = 'rgba(110, 70, 30, 0.22)';
@@ -341,21 +352,24 @@ export class Renderer {
         g.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
       }
       // Cible du Palet : anneaux peints sur la piste.
-      if (map.target) {
+      if (map.target || map.targets) {
         ground();
-        const t = map.target;
         const colors = ['#ff4d6d', '#ffffff', '#3d8bff'];
-        for (let i = t.rings.length - 1; i >= 0; i--) {
-          g.fillStyle = colors[i % colors.length];
-          g.globalAlpha = 0.55;
-          g.beginPath(); g.arc(t.x, t.y, t.rings[i], 0, 7); g.fill();
-          g.globalAlpha = 1;
-          g.strokeStyle = 'rgba(0,0,0,0.35)';
-          g.lineWidth = 3;
-          g.stroke();
+        for (const t of map.targets ?? [map.target]) {
+          for (let i = t.rings.length - 1; i >= 0; i--) {
+            g.fillStyle = colors[i % colors.length];
+            g.globalAlpha = 0.55;
+            g.beginPath(); g.arc(t.x, t.y, t.rings[i], 0, 7); g.fill();
+            g.globalAlpha = 1;
+            g.strokeStyle = 'rgba(0,0,0,0.35)';
+            g.lineWidth = 3;
+            g.stroke();
+          }
+          g.fillStyle = '#2a1a0e';
+          g.beginPath(); g.arc(t.x, t.y, 6, 0, 7); g.fill();
         }
-        g.fillStyle = '#2a1a0e';
-        g.beginPath(); g.arc(t.x, t.y, 6, 0, 7); g.fill();
+      }
+      if (map.target) {
         // Ligne de lancer.
         g.strokeStyle = 'rgba(255,255,255,0.35)';
         g.lineWidth = 4;
@@ -583,11 +597,11 @@ export class Renderer {
     return c;
   }
 
-  labelSprite(text, color) {
-    const key = `${text}|${color}`;
+  labelSprite(text, color, size = 13) {
+    const key = `${text}|${color}|${size}`;
     let c = this.cache.labels.get(key);
     if (c) return c;
-    const fs = Math.round(Math.max(11, 13 * Math.min(1.2, this.cam.scale)));
+    const fs = Math.round(Math.max(11, size * Math.min(1.2, this.cam.scale)));
     const pr = this.pr;
     const probe = makeCanvas(1, 1).getContext('2d');
     probe.font = `bold ${fs}px "Trebuchet MS", sans-serif`;
@@ -599,7 +613,9 @@ export class Renderer {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.lineWidth = 3;
-    g.strokeStyle = 'rgba(0,0,0,0.7)';
+    // Contour contrasté : sombre autour d'un texte clair, clair autour d'un texte sombre.
+    const dark = /^#([0-4])/.test(color) || color === '#d0213a';
+    g.strokeStyle = dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.7)';
     g.strokeText(text, w / 2, (fs + 8) / 2);
     g.fillStyle = color;
     g.fillText(text, w / 2, (fs + 8) / 2);
@@ -747,6 +763,7 @@ export class Renderer {
     this.groundTransform();
     this.drawGroundDynamic(state, now);
     this.screenTransform();
+    if (state.cards && map.cards) this.drawCardLabels(map, state.cards);
     this.drawSprites(map, state, now);
     this.drawEffects(now, state);
     this.drawOverlay(now, state, me);
@@ -831,6 +848,38 @@ export class Renderer {
         ctx.lineWidth = 4;
         ctx.beginPath(); ctx.arc(pk.x, pk.y, r + 10, 0, 7); ctx.stroke();
       }
+    }
+    if (state.tiles && this.currentMap?.tiles) {
+      // Dalles tombées : trou ; dalles fissurées : rougissent et tremblent.
+      const plats = this.currentMap.platforms;
+      ctx.fillStyle = '#100e22';
+      for (const i of state.tiles.gone) { const r = plats[i]; if (r) ctx.fillRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2); }
+      for (const [i, k] of state.tiles.warn) {
+        const r = plats[i];
+        if (!r) continue;
+        const j = k > 0.6 ? Math.sin(now * 60 + i) * 3 * k : 0;
+        ctx.fillStyle = `rgba(255, 60, 60, ${0.25 + 0.5 * k})`;
+        ctx.fillRect(r.x + 4 + j, r.y + 4, r.w - 8, r.h - 8);
+        ctx.strokeStyle = 'rgba(40, 10, 10, 0.8)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(r.x + r.w * 0.2, r.y + r.h * 0.3); ctx.lineTo(r.x + r.w * 0.5, r.y + r.h * 0.5); ctx.lineTo(r.x + r.w * 0.45, r.y + r.h * 0.85);
+        ctx.moveTo(r.x + r.w * 0.5, r.y + r.h * 0.5); ctx.lineTo(r.x + r.w * 0.85, r.y + r.h * 0.4);
+        ctx.stroke();
+      }
+    }
+    if (state.cards && this.currentMap?.cards) {
+      // Cartes du vingt-et-un : dos bleu tant qu'elles sont cachées, face blanche une fois retournées.
+      this.currentMap.cards.forEach((c, i) => {
+        const v = state.cards[i];
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(c.x + 5, c.y + 7, c.w, c.h);
+        ctx.fillStyle = v === null ? '#2a5fcc' : '#fff7e6';
+        ctx.fillRect(c.x, c.y, c.w, c.h);
+        ctx.strokeStyle = v === null ? '#9fc3ff' : '#c9b48f';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(c.x + 6, c.y + 6, c.w - 12, c.h - 12);
+      });
     }
     if (state.microTarget) {
       // Cible du micro-jeu « Dans le cercle ! ».
@@ -991,7 +1040,18 @@ export class Renderer {
     for (const p of state.players) {
       const info = state.roster.get(p.id);
       if (!info || p.s !== 'alive') continue;
-      this.drawLabel(p, info, { me: p.id === state.youId, champion: p.id === state.champion, crown: p.id === state.crownHolder });
+      this.drawLabel(p, info, { me: p.id === state.youId, champion: p.id === state.champion, crown: p.id === state.crownHolder, badge: state.badges?.[p.id] });
+      if (p.id === state.bombHolder) {
+        // La bombe au-dessus du porteur : elle gonfle et clignote quand la mèche raccourcit.
+        const heat = state.bombHeat ?? 0;
+        const beat = 1 + 0.12 * Math.max(0, Math.sin(now * (6 + heat * 22)));
+        const size = 46 * beat;
+        const sp = this.emojiSprite('💣', 46);
+        const c = this.toScreen(p.x, p.y, 105);
+        if (heat > 0.75 && Math.sin(now * 30) > 0) this.ctx.globalAlpha = 0.6;
+        this.blit(sp, c.x - size / 2, c.y - size / 2, size, size);
+        this.ctx.globalAlpha = 1;
+      }
     }
     for (const d of state.decoys) {
       const owner = state.roster.get(d.owner);
@@ -1079,11 +1139,21 @@ export class Renderer {
     const lab = this.labelSprite((opts.decoy ? '(leurre) ' : '') + info.name, opts.me ? '#ffd23d' : '#ffffff');
     this.blit(lab, top.x - lab.cssW / 2, y - lab.cssH, lab.cssW, lab.cssH);
     y -= lab.cssH;
-    const badges = `${opts.crown ? '👑' : ''}${opts.champion ? '🎯 PRIME' : ''}`;
+    const badges = `${opts.crown ? '👑' : ''}${opts.champion ? '🎯 PRIME' : ''}${opts.badge ?? ''}`;
     if (badges) {
       const b = this.labelSprite(badges, '#ffd23d');
       this.blit(b, top.x - b.cssW / 2, y - b.cssH, b.cssW, b.cssH);
     }
+  }
+
+  drawCardLabels(map, cards) {
+    map.cards.forEach((c, i) => {
+      const v = cards[i];
+      const label = v === null ? '?' : v === 11 ? 'A' : String(v);
+      const sp = this.labelSprite(label, v === null ? '#cfe0ff' : v >= 10 ? '#d0213a' : '#1b1b2e', 60);
+      const p = this.toScreen(c.x + c.w / 2, c.y + c.h / 2, 0);
+      this.blit(sp, p.x - sp.cssW / 2, p.y - sp.cssH / 2, sp.cssW, sp.cssH);
+    });
   }
 
   drawBomb(b, now, s) {

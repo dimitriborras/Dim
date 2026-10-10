@@ -132,6 +132,7 @@ function onSnap(msg) {
   for (const ev of msg.ev) {
     renderer.addEvent(ev, players, youId);
     if (ev.type === 'saved' && ev.id === youId) vibrate([15, 30, 15]);
+    if (ev.type === 'bombPass' && (ev.id === youId || ev.from === youId)) vibrate(ev.id === youId ? [40, 30, 40] : 15);
     if (ev.type === 'elim' && ev.killer === youId) vibrate([25, 40, 60]);
     if (ev.type === 'elim' && ev.victim === youId) vibrate(120);
     sfx.play(ev, youId);
@@ -251,6 +252,11 @@ function trajectory(st, snap) {
   // Poches gloutonnes : l'aperçu tient compte des poches agrandies.
   const scale = snap.m.hud?.kind === 'glutton' ? snap.m.hud.scale : 1;
   if (scale > 1 && map.pockets) map = { ...map, pockets: map.pockets.map((pk) => ({ ...pk, r: pk.r * scale })) };
+  // Carrelage : l'aperçu ignore les dalles déjà tombées.
+  if (snap.m.hud?.kind === 'tiles' && map.tiles) {
+    const gone = new Set(snap.m.hud.gone);
+    map = { ...map, platforms: map.platforms.filter((_, i) => !gone.has(i)) };
+  }
   const movers = (st.movers ?? []).map(([x, y], i) => ({ x, y, w: map.movingPlatforms[i]?.w ?? 0, h: map.movingPlatforms[i]?.h ?? 0 }));
   const isGround = (x, y) => isGroundAt(map, movers, x, y);
   const springAt = (x, y) => map.springs.some((r) => pointInRect(x, y, r));
@@ -258,7 +264,16 @@ function trajectory(st, snap) {
   return { ...sim, angle: ch.a, power: ch.p, ready: (predictor.pos ? predictor.energy : snap.you?.energy ?? 0) >= 1 };
 }
 
+// Petites étiquettes au-dessus des figurines selon le mini-jeu (total du vingt-et-un…).
+function badgesFor(h) {
+  if (h?.kind !== 'blackjack') return null;
+  const out = {};
+  for (const [id, st] of Object.entries(h.players)) out[id] = st.b ? ` 💥${st.t}` : ` 🃏${st.t}${st.s ? '✋' : ''}`;
+  return out;
+}
+
 let currentState = null;
+let lastTick = 0;
 let lastFrame = performance.now();
 function frame() {
   const nowMs = performance.now();
@@ -290,9 +305,22 @@ function frame() {
     microTarget: m.hud?.kind === 'micro' && m.hud.physics === 'circle' ? { ...MAPS.micro.center, r: m.hud.data?.radius ?? 85 } : null,
     energyMax: latest.you?.energyMax,
     pocketScale: m.hud?.kind === 'glutton' ? m.hud.scale : 1,
+    tiles: m.hud?.kind === 'tiles' ? { gone: m.hud.gone, warn: m.hud.warn } : null,
+    cards: m.hud?.kind === 'blackjack' ? m.hud.cards : null,
+    bombHolder: m.hud?.kind === 'bomb' ? m.hud.holder : null,
+    bombHeat: m.hud?.kind === 'bomb' ? m.hud.heat : 0,
+    badges: badgesFor(m.hud),
     touch: isTouch,
   };
   renderer.draw(currentState);
+  // Patate chaude : tic-tac de plus en plus rapide (la mèche n'est jamais affichée en secondes).
+  if (currentState.bombHolder) {
+    const period = 0.9 - (currentState.bombHeat ?? 0) * 0.75;
+    if (nowMs / 1000 - lastTick > period) {
+      lastTick = nowMs / 1000;
+      sfx.tone({ f: currentState.bombHolder === youId ? 1400 : 1000, d: 0.03, type: 'square', v: currentState.bombHolder === youId ? 0.05 : 0.025 });
+    }
+  }
 }
 requestAnimationFrame(frame);
 

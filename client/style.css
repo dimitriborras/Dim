@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --bg: #1b2340;
   --panel: rgba(20, 26, 52, 0.88);
   --panel-solid: #232c52;
@@ -15,7 +16,10 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); touch-action: none; -webkit-user-select: none; user-select: none; }
+/* Couleur et police posées sur html ET body : certains hôtes (aperçus, intégrations) imposent
+   leur propre couleur de texte au body, ce qui rendait les textes noirs sur fond sombre. */
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif; font-size: 16px; color-scheme: dark; touch-action: none; -webkit-user-select: none; user-select: none; }
+select, option, input, textarea { color: var(--text); background-color: #141a36; }
 canvas#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: crosshair; }
 [hidden] { display: none !important; }
 
@@ -356,3 +360,24 @@ body.portrait #lobby.collapsed .btn { padding: 6px 10px; font-size: 13px; }
 #gear .saves { font-size: .8em; }
 .mini-pill { display: inline-block; padding: 4px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-weight: 800; font-size: 13px; }
 #minihud { text-align: center; }
+/* Bluff */
+.m-hint2 { color: #d9d4ff; font-weight: 700; font-size: 15px; }
+.m-five { grid-template-columns: repeat(5, 1fr); }
+.m-two { grid-template-columns: 1fr 1fr; }
+.m-choice.liar { background: #8a2338; box-shadow: 0 5px 0 #4a0f1c; }
+.m-card { display: grid; place-items: center; width: 130px; height: 170px; border-radius: 16px; background: #fff7e6; color: #2a1a0e; font-size: 68px; box-shadow: 0 8px 0 #c9b48f, 0 14px 30px rgba(0,0,0,.4); animation: mpop .35s both; }
+.m-card small { font-size: 12px; font-weight: 800; color: #6b5a3c; }
+.m-card.back { background: repeating-linear-gradient(45deg, #3d8bff 0 10px, #2a5fcc 10px 20px); color: #fff; }
+.m-card.back small { color: #fff; }
+.m-liar { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; }
+.m-tally { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; }
+.m-tally span { display: grid; gap: 2px; min-width: 52px; padding: 6px 8px; border-radius: 12px; background: rgba(255,255,255,.08); font-size: 22px; }
+.m-tally span.mine { outline: 3px solid var(--accent); }
+.m-tally span.win { background: rgba(61,220,132,.3); }
+.m-tally i { font-style: normal; font-size: 12px; color: var(--muted); letter-spacing: 1px; }
+b.ok { color: var(--good); } b.bad { color: var(--bad); }
+.m-vsline { font-weight: 900; font-size: 16px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+.m-vsline:empty { display: none; }
+.mini-pill.hot { background: #8a2338; border-color: #ff5a5a; animation: pulse .4s infinite alternate; }
+.mini-pill.big { font-size: 16px; padding: 6px 16px; }
+.mini-pill b { color: var(--accent); font-size: 1.2em; }

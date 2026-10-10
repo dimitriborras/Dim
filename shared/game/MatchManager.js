@@ -12,10 +12,14 @@ import { CrownFinale } from './minigames/CrownFinale.js';
 import { MicroRushMinigame } from './minigames/MicroRushMinigame.js';
 import { PaletMinigame } from './minigames/PaletMinigame.js';
 import { GluttonMinigame } from './minigames/GluttonMinigame.js';
+import { BombMinigame } from './minigames/BombMinigame.js';
+import { TilesMinigame } from './minigames/TilesMinigame.js';
+import { BlackjackMinigame } from './minigames/BlackjackMinigame.js';
 
 export function defaultRegistry() {
   return new MinigameRegistry()
     .register(RaceMinigame).register(CoinRushMinigame).register(PaletMinigame).register(GluttonMinigame)
+    .register(BombMinigame).register(TilesMinigame).register(BlackjackMinigame)
     .register(MicroRushMinigame).register(CrownFinale);
 }
 

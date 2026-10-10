@@ -68,7 +68,7 @@ function play(id, inst, p, start) {
 }
 
 test('chaque micro-jeu simple se gagne avec le bon geste et se perd sans', () => {
-  for (const def of MICROS.filter((m) => !m.physics && !m.duel && !m.breath)) {
+  for (const def of MICROS.filter((m) => !m.physics && !m.duel && !m.breath && !m.bluff)) {
     for (const speed of [1, 1.66]) {
       const inst = def.create({ rng: createRng(7), speed, start: 100 });
       const good = P('a');
@@ -218,6 +218,9 @@ test('duels : le meilleur des deux gagne, égalité ou inaction = personne', () 
   assert.ok(tug.progress(A).rope > 0 && tug.progress(B).rope < 0, 'chacun voit la corde de son côté');
   assert.equal(tug.ghosts.length, 1, 'un fantôme pour le joueur impair');
   assert.ok(!tug.won(C), 'sans taper, le fantôme gagne (ou personne)');
+  const ghost = tug.ghosts[0];
+  for (let i = 0; i < 5; i++) tug.input(ghost, { k: 'tap' }, 1 + i * 0.1);
+  assert.ok(tug.progress(C).rope < 0, 'le fantôme tire vraiment sur la corde');
 
   const w = MICRO_BY_ID.get('western').create({ rng: createRng(2), speed: 1, start: 0, pairs });
   const sig = w.data.signalAt;
@@ -271,4 +274,66 @@ test('souffle : il faut souffler assez longtemps, débit plafonné', () => {
   const c = P('c');
   for (let t = 0.1; t < 4; t += 0.1) inst.input(c, { k: 'blow', v: 0.1 }, t);
   assert.ok(!inst.won(c), 'un filet d\'air ne suffit pas');
+});
+
+test('bluff : la minorité gagne, le plus petit nombre unique gagne', () => {
+  const ps = ['a', 'b', 'c', 'd', 'e'].map(P);
+  const mino = MICRO_BY_ID.get('minority').create({ rng: createRng(1), speed: 1, start: 0 });
+  [0, 0, 0, 1, 1].forEach((v, i) => mino.input(ps[i], { k: 'choice', v }, 1));
+  assert.deepEqual(ps.map((p) => mino.won(p)), [false, false, false, true, true]);
+  assert.deepEqual(mino.reveal().counts, [3, 2, 0]);
+  const tie = MICRO_BY_ID.get('minority').create({ rng: createRng(1), speed: 1, start: 0 });
+  [0, 0, 1, 1].forEach((v, i) => tie.input(ps[i], { k: 'choice', v }, 1));
+  assert.ok(ps.slice(0, 4).every((p) => !tie.won(p)), 'égalité parfaite : personne');
+
+  const uni = MICRO_BY_ID.get('unique').create({ rng: createRng(1), speed: 1, start: 0 });
+  [1, 1, 2, 3, 3].forEach((v, i) => uni.input(ps[i], { k: 'choice', v }, 1));
+  assert.deepEqual(ps.map((p) => uni.won(p)), [false, false, true, false, false], '2 est le plus petit nombre unique');
+});
+
+test('Menteur ? : l\'annonceur gagne s\'il trompe le devin', () => {
+  const pairs = new Map([['a', 'b'], ['b', 'a']]);
+  const A = P('a'); const B = P('b');
+  for (const lie of [false, true]) {
+    for (const call of ['believe', 'liar']) {
+      const g = MICRO_BY_ID.get('liar').create({ rng: createRng(5), speed: 1, start: 0, pairs });
+      const [teller, guesser] = g.data.tellers[0] === 'a' ? [A, B] : [B, A];
+      const card = g.progress(teller).card;
+      assert.equal(g.progress(guesser).card, undefined, 'le devin ne voit pas la carte');
+      g.input(guesser, { k: 'choice', v: 1 }, 1); // trop tôt : ignoré
+      g.input(teller, { k: 'choice', v: lie ? 1 - card : card }, 1);
+      assert.equal(g.progress(guesser).claim, lie ? 1 - card : card, 'le devin voit l\'annonce');
+      g.input(guesser, { k: 'choice', v: call === 'liar' ? 1 : 0 }, g.data.split + 0.5);
+      const right = (call === 'liar') === lie;
+      assert.equal(g.won(guesser), right, `devin ${call} / mensonge ${lie}`);
+      assert.equal(g.won(teller), !right);
+    }
+  }
+  const silent = MICRO_BY_ID.get('liar').create({ rng: createRng(5), speed: 1, start: 0, pairs });
+  const t = silent.data.tellers[0] === 'a' ? A : B;
+  assert.ok(!silent.won(t), 'annonceur muet : il perd');
+});
+
+test('duels physiques : chacun son îlot, le survivant le plus au centre gagne', () => {
+  for (const id of ['sumo', 'curl']) {
+    const room = new GameRoom({ code: 'IS', seed: 6 });
+    room.join({ send() {} }, { name: 'H' });
+    for (let i = 0; i < 4; i++) room.addBot(); // 5 joueurs : un duo et un trio
+    room.match.start(1);
+    const mg = room.match.minigame;
+    mg.sequence = [id];
+    while (mg.phase !== 'play') room.tick(DT);
+    assert.equal(mg.world.map.id, 'duel');
+    const sizes = [...new Set([...mg.groups.values()].map((g) => g.members))].map((m) => m.length).sort();
+    assert.deepEqual(sizes, [2, 3], 'un duo et un trio');
+    for (const [pid, g] of mg.groups) {
+      const p = mg.world.players.find((q) => q.id === pid);
+      const c = mg.world.map.targets[g.island];
+      assert.ok(Math.hypot(p.x - c.x, p.y - c.y) < 150, 'placé sur son îlot');
+      if (id === 'curl') assert.equal(p.energy, 1, 'une seule pichenette');
+    }
+    while (mg.phase === 'play') room.tick(DT);
+    const winners = Object.values(mg.results).filter(Boolean).length;
+    assert.ok(winners <= 2, `au plus un gagnant par îlot (${winners})`);
+  }
 });

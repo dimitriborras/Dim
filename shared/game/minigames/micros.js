@@ -30,6 +30,7 @@ export const SKILLS = {
   physics: { label: 'Physique', icon: '🎱' },
   duel: { label: 'Duel', icon: '⚔️' },
   breath: { label: 'Souffle', icon: '🌬️' },
+  bluff: { label: 'Bluff', icon: '🃏' },
 };
 
 // Duels : chaque joueur affronte un adversaire désigné (`pairs` : id -> id adverse).
@@ -38,7 +39,10 @@ export const GHOST_ID = 'ghost';
 const ghostPlayer = () => ({ id: GHOST_ID, state: 'alive', bot: { skill: 0.55 } });
 const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 function duelSetup(pairs) {
-  const opp = (p) => pairs?.get(p.id) ?? null;
+  // Paires dans les deux sens : le fantôme aussi connaît son adversaire.
+  const both = new Map();
+  for (const [a, b] of pairs ?? []) { both.set(a, b); both.set(b, a); }
+  const opp = (p) => both.get(p.id) ?? null;
   const ghosts = pairs && [...pairs.values()].includes(GHOST_ID) ? [ghostPlayer()] : [];
   return { opp, ghosts, data: Object.fromEntries(pairs ?? []) };
 }
@@ -706,6 +710,211 @@ MICROS.push(
           const b = pick.get(o);
           if (b === undefined) return true;
           return (a - b + 3) % 3 === 1; // 0 pierre, 1 feuille, 2 ciseaux : feuille bat pierre…
+        },
+      };
+    },
+  },
+);
+
+// ------------------------------------------------------------ duels physiques
+// Chaque groupe (2 joueurs, 3 si nombre impair) a son îlot. À la fin, le survivant le plus
+// proche du centre de son îlot l'emporte : rester planqué au bord ne paie pas.
+function isleWinner(groups) {
+  return (p, world) => {
+    const g = groups?.get(p.id);
+    if (!g || p.state !== 'alive') return false;
+    const c = world.map.targets[g.island];
+    const d = (q) => Math.hypot(q.x - c.x, q.y - c.y);
+    const rivals = world.players.filter((q) => q !== p && groups.get(q.id)?.island === g.island && q.state === 'alive');
+    return rivals.every((q) => d(p) < d(q));
+  };
+}
+MICROS.push(
+  {
+    id: 'sumo',
+    skill: 'duel',
+    level: 2,
+    duel: true,
+    physics: 'sumo',
+    verb: 'SUMO !',
+    hint: 'Seul contre seul sur ton îlot : pousse-le dans le vide !',
+    create({ speed, groups }) {
+      return {
+        duration: 6 / Math.sqrt(speed),
+        data: { groups: groups ? Object.fromEntries([...groups].map(([id, g]) => [id, g.island])) : {} },
+        input() {},
+        bot() { return null; },
+        progress() { return {}; },
+        won: isleWinner(groups),
+      };
+    },
+  },
+  {
+    id: 'curl',
+    skill: 'duel',
+    level: 2,
+    duel: true,
+    physics: 'curl',
+    verb: 'PALET DUEL !',
+    hint: 'Une seule pichenette chacun : le plus près du centre gagne. Tu peux dégommer l\'autre.',
+    create({ speed, groups }) {
+      return {
+        duration: 5.5 / Math.sqrt(speed),
+        data: { groups: groups ? Object.fromEntries([...groups].map(([id, g]) => [id, g.island])) : {} },
+        input() {},
+        bot() { return null; },
+        progress() { return {}; },
+        won: isleWinner(groups),
+      };
+    },
+  },
+);
+
+// ------------------------------------------------------------ bluff
+// Psychologie et tromperie : tout le monde choisit en secret, on révèle au verdict.
+const CHOICES3 = ['🍕', '🍔', '🌮'];
+MICROS.push(
+  {
+    id: 'minority',
+    skill: 'bluff',
+    level: 1,
+    bluff: true,
+    verb: 'LA MINORITÉ !',
+    hint: 'Choisis en secret. Seuls ceux du choix le MOINS populaire gagnent.',
+    create({ speed }) {
+      const pick = new Map();
+      const counts = () => {
+        const c = [0, 0, 0];
+        for (const v of pick.values()) c[v] += 1;
+        return c;
+      };
+      return {
+        duration: 4.2 / Math.sqrt(speed),
+        data: { options: CHOICES3 },
+        input(p, msg) {
+          if (msg.k !== 'choice' || pick.has(p.id)) return;
+          const v = Math.round(msg.v);
+          if (v >= 0 && v <= 2) pick.set(p.id, v);
+        },
+        bot(p, now, rng) { return !pick.has(p.id) && rng.next() < 0.04 ? { k: 'choice', v: rng.int(0, 2) } : null; },
+        progress(p) { return { choice: pick.get(p.id) ?? null }; },
+        reveal() { return { counts: counts() }; },
+        won(p) {
+          if (!pick.has(p.id)) return false;
+          const c = counts();
+          const used = c.filter((n) => n > 0);
+          const min = Math.min(...used);
+          // Tout le monde au même endroit, ou égalité parfaite : personne ne se démarque.
+          if (used.length < 2 || used.every((n) => n === min)) return false;
+          return c[pick.get(p.id)] === min;
+        },
+      };
+    },
+  },
+  {
+    id: 'unique',
+    skill: 'bluff',
+    level: 2,
+    bluff: true,
+    verb: 'NOMBRE UNIQUE !',
+    hint: 'Le plus PETIT nombre choisi par une seule personne gagne. Trop évident = doublon !',
+    create({ speed }) {
+      const pick = new Map();
+      const winner = () => {
+        const c = new Map();
+        for (const v of pick.values()) c.set(v, (c.get(v) ?? 0) + 1);
+        const uniques = [...c.entries()].filter(([, n]) => n === 1).map(([v]) => v);
+        return uniques.length ? Math.min(...uniques) : null;
+      };
+      return {
+        duration: 4.4 / Math.sqrt(speed),
+        data: { options: [1, 2, 3, 4, 5] },
+        input(p, msg) {
+          if (msg.k !== 'choice' || pick.has(p.id)) return;
+          const v = Math.round(msg.v);
+          if (v >= 1 && v <= 5) pick.set(p.id, v);
+        },
+        // Les bots aiment les petits nombres… comme tout le monde.
+        bot(p, now, rng) { return !pick.has(p.id) && rng.next() < 0.04 ? { k: 'choice', v: rng.pick([1, 1, 2, 2, 2, 3, 3, 4, 5]) } : null; },
+        progress(p) { return { choice: pick.get(p.id) ?? null }; },
+        reveal() {
+          const c = [0, 0, 0, 0, 0];
+          for (const v of pick.values()) c[v - 1] += 1;
+          return { counts: c, winning: winner() };
+        },
+        won(p) { return pick.has(p.id) && pick.get(p.id) === winner(); },
+      };
+    },
+  },
+  {
+    id: 'liar',
+    skill: 'bluff',
+    level: 2,
+    bluff: true,
+    duel: true,
+    verb: 'MENTEUR ?',
+    hint: 'L\'un voit la carte et l\'annonce (vrai ou faux), l\'autre le croit… ou crie « Menteur ! ».',
+    create({ rng, speed, start, pairs }) {
+      const { opp, ghosts, data } = duelSetup(pairs);
+      // Dans chaque paire, un « annonceur » tiré au sort et un « devin ».
+      const tellers = new Set();
+      for (const [a, b] of pairs ?? []) {
+        if (tellers.has(a) || tellers.has(b)) continue;
+        tellers.add(b === GHOST_ID || rng.next() < 0.5 ? a : b);
+      }
+      const card = new Map(); // annonceur -> carte réelle (0 = 🍀 chance, 1 = 💀 malchance)
+      for (const id of tellers) card.set(id, rng.int(0, 1));
+      const claim = new Map(); // annonceur -> carte annoncée
+      const verdict = new Map(); // devin -> 'believe' | 'liar'
+      const split = start + 2.6 / Math.sqrt(speed); // fin de l'annonce, début du verdict
+      const tellerOf = (p) => (tellers.has(p.id) ? p.id : opp(p));
+      const isTeller = (p) => tellers.has(p.id);
+      const lie = (t) => claim.has(t) && claim.get(t) !== card.get(t);
+      return {
+        duration: 6.2 / Math.sqrt(speed),
+        data: { pairs: data, split, tellers: [...tellers] },
+        ghosts,
+        input(p, msg, now) {
+          if (msg.k !== 'choice' || !opp(p)) return;
+          const v = Math.round(msg.v);
+          if (isTeller(p)) {
+            if (now <= split + 0.15 && !claim.has(p.id) && (v === 0 || v === 1)) claim.set(p.id, v);
+          } else if (now >= split - 0.1 && claim.has(opp(p)) && !verdict.has(p.id) && (v === 0 || v === 1)) {
+            verdict.set(p.id, v === 1 ? 'liar' : 'believe');
+          }
+        },
+        bot(p, now, rng) {
+          if (isTeller(p)) {
+            if (claim.has(p.id) || now > split - 0.4 || rng.next() > 0.08) return null;
+            const c = card.get(p.id);
+            return { k: 'choice', v: rng.next() < 0.45 ? 1 - c : c }; // ment presque une fois sur deux
+          }
+          if (verdict.has(p.id) || now < split + 0.3 || !claim.has(opp(p)) || rng.next() > 0.08) return null;
+          // Un « 🍀 » est plus souvent un mensonge qu'un « 💀 » : on se méfie un peu plus.
+          const suspicious = claim.get(opp(p)) === 0 ? 0.55 : 0.4;
+          return { k: 'choice', v: rng.next() < suspicious ? 1 : 0 };
+        },
+        progress(p) {
+          if (!opp(p)) return {};
+          const t = tellerOf(p);
+          return isTeller(p)
+            ? { role: 'teller', card: card.get(p.id), claim: claim.get(p.id) ?? null, opp: opp(p) }
+            : { role: 'guesser', claim: claim.get(t) ?? null, verdict: verdict.get(p.id) ?? null, opp: opp(p) };
+        },
+        reveal(p) {
+          const t = tellerOf(p);
+          return t ? { truth: card.get(t), lied: lie(t) } : {};
+        },
+        won(p) {
+          if (!opp(p)) return false;
+          const t = tellerOf(p);
+          const g = isTeller(p) ? opp(p) : p.id;
+          // Sans annonce, le devin gagne ; sans verdict, l'annonceur gagne.
+          let guesserRight;
+          if (!claim.has(t)) guesserRight = true;
+          else if (!verdict.has(g)) guesserRight = false;
+          else guesserRight = (verdict.get(g) === 'liar') === lie(t);
+          return isTeller(p) ? !guesserRight : guesserRight;
         },
       };
     },

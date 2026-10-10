@@ -113,11 +113,16 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
   - ⚔️ duel : *Tire !* (tir à la corde), *Duel !* (le plus rapide au signal), *Chifoumi !*. Les joueurs sont
     appariés au hasard ; avec un nombre impair, le dernier affronte un fantôme. Égalité ou inaction : personne
     ne gagne ;
+  - ⚔️🎱 duels physiques, chacun sur son îlot (duo, ou trio si impair) : *Sumo !* (pousse l'autre dans le
+    vide) et *Palet duel !* (une seule pichenette chacun, le plus près du centre gagne) ;
+  - 🃏 bluff : *La minorité !* (seuls ceux du choix le moins populaire gagnent), *Nombre unique !* (le plus
+    petit nombre choisi par une seule personne), *Menteur ?* (l'un voit une carte et l'annonce, vraie ou
+    fausse ; l'autre le croit ou crie « Menteur ! ») ;
   - 🎱 physique de palet : *Dans le cercle !*, *Reste sur la table !*, *Mini-golf !*.
 
   La séquence est construite pour rester lisible : échauffement en niveau 1, montée en difficulté,
-  jamais deux fois de suite la même capacité, un face-à-face en duel à la manche 5, pauses « palet » aux
-  manches 4 et 7, et un **boss** physique en dernier (plus long, 2 points). Le rythme accélère tous les trois
+  jamais deux fois de suite la même capacité, un duel à la manche 5, un coup de bluff à la manche 6,
+  pauses « palet » aux manches 4 et 7 (un duel physique possible à la 7e), et un **boss** physique en dernier (plus long, 2 points). Le rythme accélère tous les trois
   micro-jeux. Les micro-jeux déjà joués dans le match sont évités à la Rafale suivante. Les gestes de réflexe
   sont horodatés à l'heure du serveur pour rester équitables malgré le ping. Ajouter un micro-jeu = ajouter une
   définition (avec `skill` et `level`) dans `shared/game/minigames/micros.js`.
@@ -126,7 +131,14 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
     temps ; on marque 5, 3 ou 1 point selon l'anneau où l'on s'arrête… ou l'on dégomme ceux qui y sont ;
   - *Les poches gloutonnes* : les poches du billard grossissent, pas de deuxième chance, le dernier debout gagne ;
   - *Course sur le tapis* : circuit avec trous, ressorts et plateforme mobile, on bouscule les autres dans les trous ;
-  - *Ruée sur les jetons* : percuter quelqu'un lui fait lâcher un jeton (qu'il ne peut pas reprendre tout de suite).
+  - *Ruée sur les jetons* : percuter quelqu'un lui fait lâcher un jeton (qu'il ne peut pas reprendre tout de suite) ;
+  - *La patate chaude* (Mario Party) : une bombe passe au moindre contact ; quand elle explose, son porteur est
+    éliminé. La mèche n'est jamais affichée en secondes : on l'entend accélérer ;
+  - *Le carrelage* (Fall Guys, Hex-A-Gone) : la dalle où l'on s'arrête tombe 2 s plus tard ; glisser par-dessus
+    ne l'abîme pas. Le dernier debout gagne ;
+  - *Vingt-et-un* (le blackjack) : 15 cartes face cachée ; chaque pichenette retourne la carte où elle s'arrête
+    et ajoute sa valeur ; le plus proche de 21 sans dépasser gagne. Bouton rond : « Je reste ». Percuter un
+    adversaire en pleine glissade change sa carte.
 - **Finale** : *La couronne* — temps de possession ; un « Carton ! » sur le porteur la lui vole.
 - **La Mêlée** (remplace l'ancien combat au pistolet) : 40 s sur le billard, gadgets autorisés. Empocher un
   adversaire : 3 pts (puis 1 et 0 sur la même victime) ; Carton : +1 ; boule numérotée empochée : +1 (3 au plus) ;

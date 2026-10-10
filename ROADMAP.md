@@ -56,15 +56,17 @@ On avance par étapes. Chaque étape doit laisser le jeu jouable et être testé
    mis en cache et résolution adaptative. Reste à faire : boutique en 3 cartes, arènes pensées pour le vertical.
 3 bis. **Le billard** *(fait)* : l'arène principale devient une table de billard à six poches ; lobby en billard
    libre avec score d'empochés ; vue pivotée en vertical ; boules mobiles et carambolages ; points pour les gros chocs.
-4. **Micro-jeux à la WarioWare** *(fait : 21 micro-jeux dans « La Rafale »)* : rafales de 10 micro-jeux à un
+4. **Micro-jeux à la WarioWare** *(fait : 26 micro-jeux dans « La Rafale »)* : rafales de 10 micro-jeux à un
    seul geste, chacun lié à une capacité (réflexe, vitesse, lecture, observation, timing, mémoire, calcul,
-   précision, langage, souffle, duel, physique de palet). Séquence cohérente : échauffement, montée en niveau,
-   capacités alternées, duel en face-à-face, pauses « palet », boss final (mini-golf). Duels appariés (fantôme
-   si impair). Souffle dans le micro du téléphone, avec repli au doigt.
+   précision, langage, souffle, duel, bluff, physique de palet). Séquence cohérente : échauffement, montée en
+   niveau, capacités alternées, duel puis bluff, pauses « palet » (dont un duel physique sur îlots), boss final.
+   Souffle dans le micro du téléphone, avec repli au doigt.
 4 bis. **Tout à la pichenette** *(fait)* : plus aucune arme. Le combat devient la Mêlée sur le billard (empocher,
    cartons, boules) ; la boutique devient le Distributeur (3 capsules personnelles à la ROUNDS : atouts de palet
    et gadgets) ; nouveaux mini-jeux *Le Palet* (crokinole / curling) et *Les poches gloutonnes* ; jetons volés
-   par les chocs ; couronne volée par un Carton. À venir : micro-jeux à bluff, duels physiques.
+   par les chocs ; couronne volée par un Carton.
+4 ter. **Mini-jeux exotiques** *(fait)* : la patate chaude (Mario Party), le carrelage (Fall Guys), le vingt-et-un
+   à pichenettes (blackjack, cartes face cachée). À venir : mémory géant, roi de la colline, petits chevaux.
 5. **Personnage et humour** : chapeaux et accessoires de figurine, émotes et messages rapides, chutes
    comiques, voix « plastique », récompenses de fin de partie (« Plus grosse chute », « Roi de la banane »).
 6. **Mini-jeux** (objectif 8 et plus, en variant compétition, coopération et bluff) : patate chaude,

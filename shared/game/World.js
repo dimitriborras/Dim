@@ -306,7 +306,10 @@ export class World {
   }
 
   doAction(p, a) {
-    if (a === 'item') InventorySystem.useItem(p, this);
+    if (a !== 'item') return;
+    // Un mini-jeu peut détourner le bouton rond (ex. « Je reste » au vingt-et-un).
+    if (this.hooks.onItem?.(p)) return;
+    InventorySystem.useItem(p, this);
   }
 
   collideStatic(p, speedBefore = 0) {

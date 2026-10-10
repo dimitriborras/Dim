@@ -88,6 +88,12 @@ export class Sfx {
       case 'saved': this.tone({ f: 300, f2: 900, d: 0.25, type: 'sine', v: 0.08 }); break;
       case 'magnet': this.tone({ f: 900, f2: 200, d: 0.3, type: 'sine', v: 0.06 }); break;
       case 'crownSteal': this.tone({ f: 660, f2: 1320, d: 0.2, type: 'triangle', v: 0.08 }); break;
+      case 'bombPass': this.tone({ f: 200, f2: 500, d: 0.08, type: 'square', v: 0.06 }); break;
+      case 'bombArm': this.tone({ f: 120, f2: 180, d: 0.3, type: 'sawtooth', v: 0.06 }); break;
+      case 'card': this.tone({ noise: true, d: 0.06, v: 0.05 }); this.tone({ f: 900, d: 0.05, type: 'triangle', v: 0.04 }); break;
+      case 'bust': this.tone({ f: 300, f2: 80, d: 0.4, type: 'sawtooth', v: 0.07 }); break;
+      case 'blackjack': this.tone({ f: 660, f2: 1320, d: 0.25, type: 'triangle', v: 0.08 }); break;
+      case 'tileFall': this.tone({ f: 180, f2: 60, d: 0.12, type: 'triangle', v: 0.03 }); break;
       case 'meneEnd': this.tone({ f: 523, f2: 1046, d: 0.2, type: 'triangle', v: 0.06 }); break;
       case 'shieldBreak': this.tone({ f: 1200, f2: 300, d: 0.25, type: 'triangle', v: 0.08 }); break;
       default: break;

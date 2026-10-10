@@ -6,6 +6,7 @@ import { SKILLS } from '../shared/game/minigames/micros.js';
 import { Mic } from './mic.js';
 
 const RPS = ['✊', '✋', '✌️'];
+const LIAR_CARDS = ['🍀', '💀'];
 
 const PADS = ['#ff4d4d', '#3d8bff', '#3ddc84', '#ffd23d'];
 // Position des gobelets après les `k` premiers échanges (pos[gobelet] = emplacement).
@@ -40,6 +41,7 @@ export class MicroOverlay {
       <div class="m-top"><span class="m-count"></span><span class="m-speed"></span></div>
       <div class="m-skill"></div>
       <div class="m-verb"></div>
+      <div class="m-vsline"></div>
       <div class="m-hint"></div>
       <div class="m-stage"></div>
       <div class="m-fuse"><i></i><b>🔥</b></div>
@@ -115,7 +117,14 @@ export class MicroOverlay {
     const duel = h.data?.pairs && you.opp
       ? `<div class="m-vs">${h.id === 'rps' ? `${RPS[you.choice] ?? '…'} <small>contre</small> ${RPS[you.oppChoice] ?? '…'}` : `<small>contre</small> ${esc(this.nameOf(you.opp))}`}</div>`
       : '';
-    res.innerHTML = mine === undefined ? '' : duel + `<div class="stamp ${mine ? 'ok' : 'ko'}">${mine ? `✔ RÉUSSI !<small>+${h.boss ? 2 : 1}</small>` : '✘ RATÉ'}</div><div class="others">${row}</div>`;
+    let extra = '';
+    if ((h.id === 'minority' || h.id === 'unique') && you.counts) {
+      const opts = h.data.options;
+      extra = `<div class="m-tally">${you.counts.map((n, i) => `<span class="${you.choice === (h.id === 'unique' ? i + 1 : i) ? 'mine' : ''} ${h.id === 'unique' && you.winning === i + 1 ? 'win' : ''}"><b>${opts[i]}</b><i>${'●'.repeat(n) || '·'}</i></span>`).join('')}</div>`;
+    } else if (h.id === 'liar' && you.truth !== undefined) {
+      extra = `<div class="m-vs">${you.role === 'teller' ? 'Tu as' : `${esc(this.nameOf(you.opp))} a`} ${you.lied ? '<b class="bad">menti</b>' : 'dit <b class="ok">la vérité</b>'} : la carte était ${LIAR_CARDS[you.truth]}</div>`;
+    }
+    res.innerHTML = mine === undefined ? '' : extra + (h.id === 'liar' ? '' : duel) + `<div class="stamp ${mine ? 'ok' : 'ko'}">${mine ? `✔ RÉUSSI !<small>+${h.boss ? 2 : 1}</small>` : '✘ RATÉ'}</div><div class="others">${row}</div>`;
     if (mine !== undefined) {
       this.tone(mine ? 'microWin' : 'microLose');
       vibrate(mine ? [20, 40, 20] : 80);
@@ -183,6 +192,15 @@ export class MicroOverlay {
       case 'rps':
         st.innerHTML = `<div class="m-vs">Toi <small>contre</small> ${esc(this.nameOf(d.pairs?.[this.youId]))}</div><div class="m-choices">${RPS.map((e, i) => `<button class="m-choice m-emoji" data-choice="${i}">${e}</button>`).join('')}</div>`;
         break;
+      case 'minority':
+        st.innerHTML = `<div class="m-hint2">🤫 Personne ne voit ton choix avant la fin</div><div class="m-choices">${d.options.map((e, i) => `<button class="m-choice m-emoji" data-choice="${i}">${e}</button>`).join('')}</div>`;
+        break;
+      case 'unique':
+        st.innerHTML = `<div class="m-hint2">🤫 Le plus petit nombre que personne d'autre n'a choisi</div><div class="m-choices m-five">${d.options.map((n, i) => `<button class="m-choice" data-choice="${n}">${n}</button>`).join('')}</div>`;
+        break;
+      case 'liar':
+        st.innerHTML = `<div class="m-vs">Toi <small>contre</small> ${esc(this.nameOf(d.pairs?.[this.youId]))}</div><div class="m-liar"></div>`;
+        break;
       case 'blow':
         st.innerHTML = `<div class="m-cake">${Array.from({ length: d.candles }, () => '<span class="m-candle"><i>🔥</i></span>').join('')}<div class="m-cake-base">🎂</div></div>
           <div class="m-meter"><i></i></div><div class="m-counter m-blow-msg"></div>`;
@@ -201,6 +219,15 @@ export class MicroOverlay {
     st.addEventListener('pointerdown', (e) => {
       const h = this.hud;
       if (!h || h.phase !== 'play') return;
+      const lb = e.target.closest('[data-liar]');
+      if (lb && h.id === 'liar') {
+        if (this.local.liarSent === lb.closest('.m-liar')?.dataset.key) return;
+        this.local.liarSent = lb.closest('.m-liar')?.dataset.key;
+        lb.classList.add('picked');
+        this.send({ t: 'mg', k: 'choice', v: Number(lb.dataset.liar) });
+        vibrate(12);
+        return;
+      }
       const choice = e.target.closest('[data-choice]');
       if (choice) {
         if (this.local.choice !== undefined) return;
@@ -346,6 +373,10 @@ export class MicroOverlay {
       fuse.querySelector('i').style.transform = `scaleX(${k})`;
       fuse.querySelector('b').style.left = `${k * 100}%`;
     }
+    const vsl = this.el('.m-vsline');
+    const rivals = this.you?.rivals;
+    const vsTxt = h.physics && rivals?.length ? `Toi contre ${rivals.map((id) => this.nameOf(id)).join(' et ')}` : '';
+    if (vsl.textContent !== vsTxt) vsl.textContent = vsTxt;
     if (h.phase !== 'play') return;
     const d = h.data ?? {};
     const you = this.you ?? {};
@@ -400,6 +431,31 @@ export class MicroOverlay {
         if (fg) fg.style.strokeDasharray = `${Math.min(100, (turns / d.need) * 100)} 100`;
         const key = this.stage.querySelector('.m-key');
         if (key) key.style.transform = `translate(-50%, -50%) rotate(${this.local.rot ?? 0}rad)`;
+        break;
+      }
+      case 'liar': {
+        const box = this.stage.querySelector('.m-liar');
+        if (!box) break;
+        const teller = you.role === 'teller';
+        const announce = now < d.split;
+        let key;
+        let html;
+        if (teller) {
+          key = `t${you.card}|${you.claim}|${announce}`;
+          html = `<div class="m-card">${LIAR_CARDS[you.card] ?? '?'}<small>ta carte (secrète)</small></div>`
+            + (you.claim === null && announce
+              ? `<div class="m-choices m-two"><button class="m-choice" data-liar="0">J'annonce 🍀</button><button class="m-choice" data-liar="1">J'annonce 💀</button></div><div class="m-hint2">Dis la vérité… ou mens !</div>`
+              : `<div class="m-hint2">${you.claim === null ? '⌛ Trop tard pour annoncer' : `Tu as annoncé ${LIAR_CARDS[you.claim]}… va-t-il te croire ?`}</div>`);
+        } else {
+          key = `g${you.claim}|${you.verdict}|${announce}`;
+          html = you.claim === null
+            ? `<div class="m-card back">🂠<small>${announce ? 'il regarde sa carte…' : 'aucune annonce'}</small></div>`
+            : `<div class="m-card">${LIAR_CARDS[you.claim]}<small>il annonce</small></div>`
+              + (you.verdict === null && !announce
+                ? '<div class="m-choices m-two"><button class="m-choice" data-liar="0">👍 Je te crois</button><button class="m-choice liar" data-liar="1">👉 MENTEUR !</button></div>'
+                : `<div class="m-hint2">${you.verdict ? (you.verdict === 'liar' ? 'Tu l\'accuses de mentir…' : 'Tu le crois…') : 'Attends le verdict…'}</div>`);
+        }
+        if (box.dataset.key !== key) { box.dataset.key = key; box.innerHTML = html; }
         break;
       }
       case 'tug': {

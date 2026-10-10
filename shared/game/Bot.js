@@ -21,7 +21,7 @@ export class BotBrain {
     p.input = { mx: 0, my: 0, aim: p.aim, fire: false };
     if (p.state !== 'alive') return;
     const t = world.time;
-    if (mode !== 'safe' && mode !== 'race' && mode !== 'coins') this.useItems(p, world);
+    if (!['safe', 'race', 'coins', 'blackjack'].includes(mode)) this.useItems(p, world);
     const speed = Math.hypot(p.vx, p.vy);
     if (t < this.nextAt || speed > 70 || (p.energy ?? 0) < PLAYER.flickCost) return;
     // Temps de réaction humain, plus long pour les bots moins doués.
@@ -32,6 +32,9 @@ export class BotBrain {
     else if (mode === 'coins') goal = this.coinGoal(p, world);
     else if (mode === 'micro') goal = this.microGoal(p, world, extra.micro);
     else if (mode === 'palet') goal = this.paletGoal(p, world, extra.micro);
+    else if (mode === 'bomb') goal = this.bombGoal(p, world, extra.micro);
+    else if (mode === 'tiles') goal = this.tilesGoal(p, world, extra.micro);
+    else if (mode === 'blackjack') goal = this.blackjackGoal(p, world, extra.micro);
     else if (mode === 'safe') goal = this.rng.next() < 0.12 ? this.wanderGoal(p, world) : null;
     else if (mode === 'lobby') goal = this.rng.next() < 0.5 ? this.poolShot(p, world) ?? this.wanderGoal(p, world) : null;
     else goal = this.fightGoal(p, world, extra);
@@ -89,6 +92,14 @@ export class BotBrain {
   // Micro-jeux physiques : viser le centre de la cible, ou pousser le plus proche.
   microGoal(p, world, hint) {
     if (!hint) return null;
+    // Duels physiques : chacun son îlot (le centre le plus proche).
+    if (hint.kind === 'sumo' || hint.kind === 'curl') {
+      const c = hint.centers.reduce((a, b) => (dist(p, a) < dist(p, b) ? a : b));
+      if (hint.kind === 'curl') return this.paletGoal(p, world, { center: c, rings: hint.rings });
+      const rival = world.players.find((o) => o !== p && o.state === 'alive' && dist(o, c) < 200);
+      if (rival && this.rng.next() < 0.7) return { x: rival.x, y: rival.y, push: true };
+      return dist(p, c) > 50 ? { x: c.x, y: c.y } : null;
+    }
     const c = hint.center;
     const dc = dist(p, c);
     if (hint.kind === 'circle') return dc > 45 ? { x: c.x, y: c.y } : null;
@@ -120,6 +131,76 @@ export class BotBrain {
     if (!best) return null;
     const err = (1 - this.skill) * 0.1;
     return { x: aim.x, y: aim.y, flick: { a: base + this.rng.range(-err, err) * 0.4, p: Math.max(0.05, Math.min(1, best.pw + this.rng.range(-err, err))) } };
+  }
+
+  // Patate chaude : le porteur fonce sur le plus proche, les autres fuient le porteur.
+  bombGoal(p, world, hint) {
+    const holder = hint?.holder ? world.players.find((o) => o.id === hint.holder && o.state === 'alive') : null;
+    if (!holder) return this.rng.next() < 0.1 ? this.wanderGoal(p, world) : null;
+    if (holder === p) {
+      const t = this.nearestEnemy(p, world, 900);
+      return t ? { x: t.x + t.vx * 0.2, y: t.y + t.vy * 0.2, push: true } : null;
+    }
+    const d = dist(p, holder);
+    if (d > 380 && this.rng.next() < 0.7) return null;
+    // Fuite : à l'opposé du porteur, un peu de côté, en restant sur la table.
+    const f = world.map.felt;
+    const a = Math.atan2(p.y - holder.y, p.x - holder.x) + this.side * this.rng.range(0.2, 0.8);
+    return {
+      x: Math.max(f.x + 40, Math.min(f.x + f.w - 40, p.x + Math.cos(a) * 260)),
+      y: Math.max(f.y + 40, Math.min(f.y + f.h - 40, p.y + Math.sin(a) * 260)),
+    };
+  }
+
+  // Carrelage : rejoindre une dalle intacte proche par petits bonds (glisser loin casse tout).
+  tilesGoal(p, world, hint) {
+    if (!hint) return null;
+    const here = hint.tiles.find((r) => !r.gone && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
+    if (here && here.crackAt === null) return null; // dalle saine : on attend
+    let best = null;
+    for (const r of hint.tiles) {
+      if (r.gone || r.crackAt !== null) continue;
+      const c = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+      const d = dist(p, c);
+      const crowd = world.players.filter((o) => o !== p && o.state === 'alive' && dist(o, c) < 90).length;
+      const score = d + crowd * 200;
+      if (d > 40 && (!best || score < best.score)) best = { ...c, score };
+    }
+    if (!best) return null;
+    // Petit bond si c'est à côté, sinon la pichenette la plus douce qui y arrive.
+    return dist(p, best) < 120 ? best : { x: best.x, y: best.y, power: Math.min(1, powerForDistance(dist(p, best)) * 0.95) };
+  }
+
+  // Vingt-et-un : une carte connue qui rapproche de 21 sans dépasser, sinon une carte cachée
+  // si le risque est raisonnable (moyenne d'une carte ≈ 7), sinon « je reste ».
+  blackjackGoal(p, world, hint) {
+    const st = hint?.state.get(p.id);
+    if (!st || st.busted || st.stood || st.counting) return null;
+    const stopAt = 14 + Math.round(this.skill * 3);
+    const room = 21 - st.total;
+    if (st.total >= stopAt) { p.actions.push('item'); return null; }
+    const known = hint.cards.map((c, i) => ({ c, v: hint.values[i] }));
+    let pool = known.filter((x) => x.v !== null && x.v <= room).sort((a, b) => b.v - a.v);
+    const hidden = known.filter((x) => x.v === null);
+    if (!pool.length || (pool[0].v < Math.min(room, 7) && hidden.length && room >= 9)) pool = hidden.sort((a, b) => dist(p, a.c) - dist(p, b.c));
+    if (!pool.length) { p.actions.push('item'); return null; }
+    for (const { c } of pool.slice(0, 4)) {
+      const cx = c.x + c.w / 2;
+      const cy = c.y + c.h / 2;
+      const a = Math.atan2(cy - p.y, cx - p.x);
+      for (let pw = 0.1; pw <= 1.001; pw += 0.05) {
+        const sim = simulateFlick(p, a, pw, world.map, { factor: (p.speedFactor ?? 1) * (p.powerMul ?? 1), isGround: (x, y) => world.isGround(x, y) });
+        const e = sim.end;
+        if (e.x > c.x + 12 && e.x < c.x + c.w - 12 && e.y > c.y + 12 && e.y < c.y + c.h - 12) {
+          // Main humaine : un peu d'imprécision, plus forte chez les bots moins doués.
+          const ea = (1.2 - this.skill) * 0.12;
+          const ep = (1.2 - this.skill) * 0.12;
+          return { x: cx, y: cy, flick: { a: a + this.rng.range(-ea, ea), p: Math.max(0.05, Math.min(1, pw + this.rng.range(-ep, ep))) } };
+        }
+      }
+    }
+    p.actions.push('item');
+    return null;
   }
 
   raceGoal(p, world) {

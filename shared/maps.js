@@ -195,7 +195,114 @@ export const PALET_LANE = {
   center: { x: TARGET.x, y: TARGET.y },
 };
 
-export const MAPS = { arena: ARENA, race: RACE_TRACK, micro: MICRO_TABLE, golf: MICRO_GOLF, palet: PALET_LANE };
+// Les îlots des duels physiques : quatre petits plateaux séparés par le vide, un par duel.
+const ISLE = 280;
+const ISLES = [[100, 100], [480, 100], [100, 480], [480, 480]].map(([x, y]) => ({ x, y, w: ISLE, h: ISLE }));
+export const DUEL_ISLANDS = {
+  id: 'duel',
+  name: 'Les îlots',
+  width: 860,
+  height: 860,
+  follow: false,
+  platforms: ISLES,
+  holes: [],
+  movingPlatforms: [],
+  walls: [],
+  bumpers: [],
+  springs: [],
+  hazardEdges: true,
+  targets: ISLES.map((r) => ({ x: r.x + ISLE / 2, y: r.y + ISLE / 2, rings: [35, 80] })),
+  // Trois places par îlot : face à face, et une troisième pour le trio éventuel.
+  islandSpawns: ISLES.map((r) => [
+    { x: r.x + 50, y: r.y + ISLE / 2 }, { x: r.x + ISLE - 50, y: r.y + ISLE / 2 }, { x: r.x + ISLE / 2, y: r.y + ISLE - 50 },
+  ]),
+  spawns: ISLES.flatMap((r) => [{ x: r.x + 50, y: r.y + ISLE / 2 }, { x: r.x + ISLE - 50, y: r.y + ISLE / 2 }]),
+  center: { x: 430, y: 430 },
+};
+
+// Table fermée par des bandes (aucun vide) : utilisée par la patate chaude et le vingt-et-un.
+function closedTable({ id, name, felt, obstacles = [], ...extra }) {
+  const R = 40;
+  return {
+    id,
+    name,
+    theme: 'pool',
+    width: felt.x * 2 + felt.w,
+    height: felt.y * 2 + felt.h,
+    follow: false,
+    felt,
+    platforms: [felt],
+    holes: [],
+    pockets: [],
+    movingPlatforms: [],
+    walls: [
+      { x: felt.x - R, y: felt.y - R, w: felt.w + 2 * R, h: R, style: 'rail' },
+      { x: felt.x - R, y: felt.y + felt.h, w: felt.w + 2 * R, h: R, style: 'rail' },
+      { x: felt.x - R, y: felt.y, w: R, h: felt.h, style: 'rail' },
+      { x: felt.x + felt.w, y: felt.y, w: R, h: felt.h, style: 'rail' },
+      ...obstacles,
+    ],
+    bumpers: [],
+    springs: [],
+    hazardEdges: false,
+    center: { x: felt.x + felt.w / 2, y: felt.y + felt.h / 2 },
+    ...extra,
+  };
+}
+
+// La patate chaude : une caisse fermée, deux cubes de craie pour tourner autour.
+export const BOMB_BOX = closedTable({
+  id: 'bomb',
+  name: 'La caisse',
+  felt: { x: 120, y: 120, w: 900, h: 560 },
+  obstacles: [{ x: 380, y: 375, w: 50, h: 50, style: 'chalk' }, { x: 710, y: 375, w: 50, h: 50, style: 'chalk' }],
+  spawns: [
+    { x: 250, y: 250 }, { x: 890, y: 550 }, { x: 890, y: 250 }, { x: 250, y: 550 },
+    { x: 570, y: 220 }, { x: 570, y: 580 }, { x: 300, y: 400 }, { x: 840, y: 400 },
+  ],
+});
+
+// Le carrelage : 11 × 7 dalles qui tombent après qu'une figurine s'y est posée (Hex-A-Gone).
+const TILE = 100;
+const COLS = 11;
+const ROWS = 7;
+export const TILE_FLOOR = {
+  id: 'tiles',
+  name: 'Le carrelage',
+  width: COLS * TILE + 200,
+  height: ROWS * TILE + 240,
+  follow: false,
+  tiles: true,
+  platforms: Array.from({ length: COLS * ROWS }, (_, i) => ({ x: 100 + (i % COLS) * TILE, y: 120 + Math.floor(i / COLS) * TILE, w: TILE, h: TILE })),
+  holes: [],
+  movingPlatforms: [],
+  walls: [],
+  bumpers: [],
+  springs: [],
+  hazardEdges: false,
+  spawns: [
+    { x: 250, y: 270 }, { x: 1050, y: 670 }, { x: 1050, y: 270 }, { x: 250, y: 670 },
+    { x: 650, y: 270 }, { x: 650, y: 670 }, { x: 450, y: 470 }, { x: 850, y: 470 },
+  ],
+  center: { x: 650, y: 470 },
+};
+
+// Le vingt-et-un : 15 cartes posées sur le tapis ; la zone de départ est à gauche.
+export const CARD_TABLE = closedTable({
+  id: 'cards',
+  name: 'La table de jeu',
+  felt: { x: 100, y: 100, w: 1020, h: 600 },
+  cards: Array.from({ length: 15 }, (_, i) => ({ x: 320 + (i % 5) * 158, y: 125 + Math.floor(i / 5) * 190, w: 128, h: 170 })),
+  spawns: [
+    { x: 170, y: 160 }, { x: 170, y: 250 }, { x: 170, y: 340 }, { x: 170, y: 430 },
+    { x: 170, y: 520 }, { x: 170, y: 610 }, { x: 240, y: 300 }, { x: 240, y: 500 },
+  ],
+});
+
+export const MAPS = {
+  arena: ARENA, race: RACE_TRACK, micro: MICRO_TABLE, golf: MICRO_GOLF, palet: PALET_LANE, duel: DUEL_ISLANDS,
+  bomb: BOMB_BOX, tiles: TILE_FLOOR, cards: CARD_TABLE,
+};
 
 // La poche dans laquelle se trouve ce point, ou null.
 export function pocketAt(map, x, y) {

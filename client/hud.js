@@ -127,6 +127,17 @@ export class Hud {
         else if (ev.victim === youId) this.announce(`👑 ${plain(ev.id)} t'a volé la couronne !`, 'bad');
         break;
       case 'saved': if (ev.id === youId) this.announce('🛟 Sauvé par la bouée !', 'good'); break;
+      case 'bombArm': if (ev.id === youId) this.announce('💣 Tu as la bombe !<small>Touche quelqu\'un pour la refiler</small>', 'bad'); break;
+      case 'bombPass':
+        if (ev.id === youId) this.announce(`💣 ${plain(ev.from)} t'a refilé la bombe !`, 'bad');
+        else if (ev.from === youId) this.announce('😅 Bombe refilée !', 'good');
+        break;
+      case 'card':
+        if (ev.id === youId) this.announce(`🃏 ${ev.value ? `+${ev.value === 11 ? 'As (11)' : ev.value}` : 'Hors carte'}<small>Total : ${ev.total}</small>`, ev.total > 21 ? 'bad' : 'good');
+        break;
+      case 'bust': if (ev.id === youId) this.announce(`💥 SAUTÉ ! (${ev.total})`, 'bad'); else this.pushFeed(`💥 ${this.name(ev.id)} saute à ${ev.total}`); break;
+      case 'blackjack': if (ev.id === youId) this.announce('🃏 VINGT-ET-UN !', 'good'); else this.pushFeed(`🃏 ${this.name(ev.id)} fait 21 !`); break;
+      case 'stand': this.pushFeed(`✋ ${this.name(ev.id)} reste à ${ev.total}`); break;
       case 'meneEnd':
         if (ev.scores?.[youId] !== undefined) this.announce(`🎯 Mène terminée<small>+${ev.scores[youId]} point${ev.scores[youId] > 1 ? 's' : ''}</small>`, ev.scores[youId] > 0 ? 'good' : '');
         break;
@@ -161,6 +172,7 @@ export class Hud {
     this.renderScoreboard(snap, m);
     this.renderCenter(snap, m, you);
     this.renderLobby(snap, m);
+    this.hudKind = m.hud?.kind ?? null;
     this.renderInventory(you);
     this.renderContract(you);
     this.renderMiniHud(m);
@@ -178,10 +190,12 @@ export class Hud {
       if (m.hud?.kind === 'micro') return `⭐ ${m.hud.scores[r.id] ?? 0}`;
       if (m.hud?.kind === 'crown') return `👑 ${(m.hud.held[r.id] ?? 0).toFixed(0)}s`;
       if (m.hud?.kind === 'palet') return `🎯 ${m.hud.scores[r.id] ?? 0}`;
-      if (m.hud?.kind === 'glutton') return m.hud.out.includes(r.id) ? '💀' : '🟢';
+      if (m.hud?.kind === 'glutton' || m.hud?.kind === 'tiles') return m.hud.out.includes(r.id) ? '💀' : '🟢';
+      if (m.hud?.kind === 'bomb') return m.hud.out.includes(r.id) ? '💀' : m.hud.holder === r.id ? '💣' : '🟢';
+      if (m.hud?.kind === 'blackjack') { const st = m.hud.players[r.id]; return st ? (st.b ? `💥${st.t}` : `${st.t}${st.s ? '✋' : ''}`) : ''; }
       return inMatch ? `${r.pts} pts` : `🎱 ${r.ls ?? 0}${r.host ? ' ⭐' : ''}`;
     };
-    const unit = { coins: 'jetons', crown: 'couronne', palet: 'cible', glutton: 'en vie', micro: 'réussis' }[m.hud?.kind] ?? 'points';
+    const unit = { coins: 'jetons', crown: 'couronne', palet: 'cible', glutton: 'en vie', tiles: 'en vie', bomb: 'en vie', blackjack: 'total', micro: 'réussis' }[m.hud?.kind] ?? 'points';
     const head = inMatch ? `<div class="head"><span>Classement</span><span>${unit}</span></div>` : '<div class="head"><span>Joueurs</span></div>';
     $('#scoreboard').innerHTML = head + rows.map((r) => `
       <div class="row ${r.id === this.youId ? 'me' : ''} ${r.conn ? '' : 'off'}">
@@ -276,12 +290,12 @@ export class Hud {
       : '';
     if ($('#gear').innerHTML !== perks) $('#gear').innerHTML = perks;
     $('#wallet').innerHTML = you.inMatch ? `💰 ${you.credits}<br>🏆 ${you.points}` : '💰 —<br>🏆 —';
-    const g = inv.gadget;
-    const icon = g ? this.items.get(g.id)?.icon : null;
+    const g = this.hudKind === 'blackjack' ? { id: '_stand', charges: 1, cooldown: 0 } : inv.gadget;
+    const icon = g?.id === '_stand' ? '✋' : g ? this.items.get(g.id)?.icon : null;
     const btn = $('#itemBtn');
     btn.classList.toggle('empty', !g || g.charges <= 0);
     const cd = g && g.cooldown > 0 ? 100 : 0;
-    const html = `<span class="ico">${icon ?? '·'}</span>${g ? `<b class="count">${g.charges}</b>` : ''}<i class="ring" style="--cd:${cd}%"></i>`;
+    const html = `<span class="ico">${icon ?? '·'}</span>${g && g.id !== '_stand' ? `<b class="count">${g.charges}</b>` : ''}<i class="ring" style="--cd:${cd}%"></i>`;
     if (btn.innerHTML !== html) btn.innerHTML = html;
   }
 
@@ -344,10 +358,21 @@ export class Hud {
     } else if (m.hud?.kind === 'glutton') {
       const html = `<div class="mini-pill">🕳️ Poches ×${m.hud.scale.toFixed(1)} · ${m.hud.alive.length} en vie</div>`;
       if (el.innerHTML !== html) el.innerHTML = html;
+    } else if (m.hud?.kind === 'bomb') {
+      const mine = m.hud.holder === this.youId;
+      const html = `<div class="mini-pill ${mine ? 'hot' : ''}">${mine ? '💣 TU AS LA BOMBE : refile-la !' : `💣 ${m.hud.alive.length} en vie`}</div>`;
+      if (el.innerHTML !== html) el.innerHTML = html;
+    } else if (m.hud?.kind === 'tiles') {
+      const html = `<div class="mini-pill">🟦 ${m.hud.alive.length} en vie · ne reste pas sur une dalle rouge !</div>`;
+      if (el.innerHTML !== html) el.innerHTML = html;
+    } else if (m.hud?.kind === 'blackjack') {
+      const st = m.hud.players[this.youId];
+      const html = st ? `<div class="mini-pill big">🃏 Ton total : <b>${st.t}</b>${st.b ? ' — 💥 sauté !' : st.s ? ' — ✋ tu restes' : ' · bouton rond : « je reste »'}</div>` : '';
+      if (el.innerHTML !== html) el.innerHTML = html;
     } else if (el.innerHTML) {
       el.innerHTML = '';
     }
-    document.body.classList.toggle('race-on', ['race', 'palet', 'glutton'].includes(m.hud?.kind));
+    document.body.classList.toggle('race-on', ['race', 'palet', 'glutton', 'bomb', 'tiles', 'blackjack'].includes(m.hud?.kind));
   }
 
   renderFeed() {

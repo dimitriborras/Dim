@@ -1,4 +1,4 @@
-import { MICRO_TABLE, MICRO_GOLF } from '../../maps.js';
+import { MICRO_TABLE, MICRO_GOLF, DUEL_ISLANDS } from '../../maps.js';
 import { groupRanking } from './MinigameRegistry.js';
 import { MICROS, MICRO_BY_ID, GHOST_ID } from './micros.js';
 
@@ -6,7 +6,7 @@ const COUNT = 10;
 // Gabarit de la rafale : niveaux autorisés par manche, pauses physiques et boss final.
 const SLOTS = [
   { lo: 1, hi: 1 }, { lo: 1, hi: 1 }, { lo: 1, hi: 2 }, { physics: true },
-  { duel: true }, { lo: 2, hi: 2 }, { physics: true },
+  { duel: true }, { bluff: true }, { physics: true, duelOk: true },
   { lo: 2, hi: 3 }, { lo: 3, hi: 3 }, { physics: true, boss: true },
 ];
 const ANNOUNCE = 1.1; // le mot d'ordre s'affiche seul
@@ -36,13 +36,14 @@ export class MicroRushMinigame {
   // Séquence cohérente de 10 micro-jeux :
   //  - échauffement en niveau 1, puis niveau 2, puis les plus durs (niveau 3) en fin de rafale ;
   //  - jamais deux fois de suite la même capacité (réflexe, calcul, mémoire…) ;
-  //  - un face-à-face en duel à la manche 5 ;
+  //  - un face-à-face en duel à la manche 5, puis un coup de bluff à la manche 6 ;
   //  - deux pauses « physique de palet » aux manches 4 et 7, et un boss physique en dernier
   //    (plus long, il vaut 2 points) ;
   //  - on évite les micro-jeux déjà joués dans une rafale précédente du même match.
   plan(rng, memory = new Set()) {
-    const simple = MICROS.filter((m) => !m.physics && !m.duel);
-    const duels = MICROS.filter((m) => m.duel);
+    const simple = MICROS.filter((m) => !m.physics && !m.duel && !m.bluff);
+    const duels = MICROS.filter((m) => m.duel && !m.bluff && !m.physics);
+    const bluffs = MICROS.filter((m) => m.bluff);
     const physics = MICROS.filter((m) => m.physics);
     const used = new Set();
     const seq = [];
@@ -59,8 +60,11 @@ export class MicroRushMinigame {
       let m;
       if (slot.duel) {
         m = pick(duels, [(x) => !memory.has(x.id)]);
+      } else if (slot.bluff) {
+        m = pick(bluffs, [(x) => !memory.has(x.id)]);
       } else if (slot.physics) {
-        m = pick(physics, [(x) => (slot.boss ? x.level >= 3 : x.level < 3), (x) => !memory.has(x.id)]);
+        // Les duels physiques (sumo, palet duel) seulement à la manche 7, loin du duel de la manche 5.
+        m = pick(physics, [(x) => (slot.boss ? x.level >= 3 : x.level < 3) && (slot.duelOk || !x.duel), (x) => !memory.has(x.id)]);
       } else {
         // Par ordre d'importance : on renonce d'abord à la nouveauté, puis à l'alternance, puis au niveau.
         m = pick(simple, [
@@ -99,6 +103,26 @@ export class MicroRushMinigame {
     return pairs;
   }
 
+  // Duels physiques : groupes de 2 (le dernier de 3 si impair), chacun sur son îlot.
+  placeGroups() {
+    const ids = this.ctx.rng.shuffle(this.world.players.map((p) => p.id));
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 2) chunks.push(ids.slice(i, i + 2));
+    if (chunks.length > 1 && chunks.at(-1).length === 1) chunks.at(-2).push(chunks.pop()[0]);
+    this.groups = new Map();
+    chunks.forEach((members, island) => {
+      members.forEach((id, k) => {
+        this.groups.set(id, { island, members });
+        const p = this.world.players.find((q) => q.id === id);
+        const spot = DUEL_ISLANDS.islandSpawns[island % 4][k];
+        Object.assign(p, { x: spot.x, y: spot.y, safe: { ...spot }, vx: 0, vy: 0 });
+        // Palet duel : une seule pichenette chacun.
+        if (this.def.physics === 'curl') p.energy = 1;
+      });
+    });
+    if (this.def.physics === 'curl') this.world.rules.regen = 0;
+  }
+
   isBoss() {
     return !!SLOTS[this.index]?.boss;
   }
@@ -124,7 +148,12 @@ export class MicroRushMinigame {
       return;
     }
     // Micro-jeu physique : nouvelle petite table, tout le monde debout et prêt.
-    if (this.def.physics) this.world = this.makeWorld(this.def.physics === 'golf' ? MICRO_GOLF : MICRO_TABLE);
+    this.groups = null;
+    if (this.def.physics) {
+      const map = this.def.physics === 'golf' ? MICRO_GOLF : this.def.physics === 'sumo' || this.def.physics === 'curl' ? DUEL_ISLANDS : MICRO_TABLE;
+      this.world = this.makeWorld(map);
+      if (map === DUEL_ISLANDS) this.placeGroups();
+    }
     this.world.rules.frozen = true;
     this.phase = 'announce';
     this.phaseEnd = this.world.time + ANNOUNCE;
@@ -136,7 +165,7 @@ export class MicroRushMinigame {
     if (this.done) return;
     if (this.phase === 'announce' && t >= this.phaseEnd) {
       this.pairs = this.def.duel ? this.makePairs() : null;
-      this.inst = this.def.create({ rng: this.ctx.rng, speed: this.speed(), start: t, pairs: this.pairs });
+      this.inst = this.def.create({ rng: this.ctx.rng, speed: this.speed(), start: t, pairs: this.pairs, groups: this.groups });
       if (this.isBoss()) this.inst.duration *= 1.4; // le boss laisse le temps de s'y reprendre
       this.phase = 'play';
       this.phaseEnd = t + this.inst.duration;
@@ -211,7 +240,8 @@ export class MicroRushMinigame {
     const p = this.ctx.players.find((x) => x.id === playerId);
     if (!p || !this.inst) return null;
     const reveal = this.results && this.inst.reveal ? this.inst.reveal(p) : {};
-    return { ...this.inst.progress(p), ...reveal, won: this.results ? this.results[playerId] ?? null : null };
+    const rivals = this.groups?.get(playerId)?.members.filter((id) => id !== playerId);
+    return { ...this.inst.progress(p), ...reveal, ...(rivals ? { rivals } : {}), won: this.results ? this.results[playerId] ?? null : null };
   }
 
   botMode() {
@@ -219,6 +249,9 @@ export class MicroRushMinigame {
   }
 
   botHint() {
+    if (this.def?.physics === 'sumo' || this.def?.physics === 'curl') {
+      return { kind: this.def.physics, centers: DUEL_ISLANDS.targets, rings: DUEL_ISLANDS.targets[0].rings };
+    }
     return this.def?.physics ? { kind: this.def.physics, center: this.world.map.center } : null;
   }
 
