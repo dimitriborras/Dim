@@ -39,7 +39,7 @@ test('4 connexions WebSocket voient le même état', async () => {
     const all = [host, ...others].map(lastSnap);
     for (const s of all) {
       assert.equal(s.roster.length, 4);
-      assert.equal(s.m.phase, 'intro');
+      assert.equal(s.m.phase, 'pick', 'la partie commence par le vote du mini-jeu');
     }
     assert.ok(all.every((s) => s.you.id), 'chaque client reçoit sa vue privée');
     for (const c of [host, ...others, bad]) c.ws.close();

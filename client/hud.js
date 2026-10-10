@@ -7,6 +7,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 
 const PHASE_LABEL = {
   lobby: '🎱 Billard libre',
+  pick: '🗳️ Choix du mini-jeu',
   intro: 'Préparez-vous…',
   minigame: '',
   rewards: '🎰 Distributeur',
@@ -15,6 +16,11 @@ const PHASE_LABEL = {
   finaleIntro: '🏆 FINALE',
   finale: '🏆 FINALE',
   final: 'Classement final',
+};
+
+const GAME_ICON = {
+  micro: '⚡', race: '🏁', coins: '🪙', palet: '🎯', glutton: '🕳️', bomb: '💣', tiles: '🟦', blackjack: '🃏',
+  memory: '🧠', king: '👑', mine: '⛏️', movers: '🚚', impostor: '🔪', crown: '👑',
 };
 
 const CATEGORY_LABEL = { perk: 'atout permanent', gadget: 'gadget · bouton rond' };
@@ -41,6 +47,13 @@ export class Hud {
       if (e.target.closest('[data-reroll]')) this.send({ t: 'reroll' });
     });
     $('#lobby').addEventListener('click', (e) => this.onLobbyClick(e));
+    $('#pick').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-pick]');
+      if (!b) return;
+      this.send({ t: 'pick', i: Number(b.dataset.pick) });
+      this.pickMine = Number(b.dataset.pick);
+      this.pickKey = '';
+    });
     $('#vote').addEventListener('click', (e) => {
       const b = e.target.closest('[data-vote]');
       if (!b || b.disabled) return;
@@ -198,6 +211,7 @@ export class Hud {
     this.renderLobby(snap, m);
     this.hudKind = m.hud?.kind ?? null;
     this.renderVote(snap, m, you);
+    this.renderPick(m);
     this.renderInventory(you);
     this.renderContract(you);
     this.youMicro = you?.micro ?? null;
@@ -245,7 +259,7 @@ export class Hud {
     } else if ((m.phase === 'rewards' || m.phase === 'final') && m.results && m.phase === 'rewards') {
       const rows = m.results.awards.map((a) => `<tr><td>${a.rank}</td><td>${this.name(a.id)}</td><td class="num">+${a.credits} 💰</td><td class="num">+${a.points} 🏆</td></tr>`).join('');
       const champ = m.champion ? `<p>🎯 ${this.name(m.champion)} est le champion : une bouée gratuite, mais sa tête est mise à prix (+2 pts, +30 💰).</p>` : '';
-      html = `<div class="card"><h2>${esc(m.results.name)}</h2><table class="res"><tr><th>#</th><th>Joueur</th><th>Crédits</th><th>Points</th></tr>${rows}</table>${champ}<p>🎰 Distributeur ouvert. Mêlée sur le billard dans ${Math.ceil(m.timeLeft ?? 0)} s.</p></div>`;
+      html = `<div class="card"><h2>${esc(m.results.name)}</h2><table class="res"><tr><th>#</th><th>Joueur</th><th>Crédits</th><th>Points</th></tr>${rows}</table>${champ}<p>🎰 Distributeur ouvert. ${m.round === 1 || m.round === m.rounds ? 'Mêlée sur le billard' : m.round >= m.rounds ? 'Finale' : 'Vote de la prochaine manche'} dans ${Math.ceil(m.timeLeft ?? 0)} s.</p></div>`;
     } else if (m.phase === 'final' && m.standings) {
       const s = m.standings;
       const pod = [s[1], s[0], s[2]].filter(Boolean).map((p) => `<div class="p${p.rank}">${p.rank === 1 ? '👑' : p.rank}<br>${esc(p.name)}<br>${p.points} pts</div>`).join('');
@@ -477,6 +491,36 @@ export class Hud {
     const reroll = `<button class="btn small ${free ? 'primary' : ''}" data-reroll="1" ${open && (free || you.credits >= 15) ? '' : 'disabled'}>🔄 Relancer ${free ? '(gratuit)' : '(15 💰)'}</button>`;
     const owned = `<div class="owned">Atouts : ${inv.perks.map((id) => this.items.get(id)?.icon).join(' ') || '—'} · Gadget : ${inv.gadget ? this.items.get(inv.gadget.id)?.icon : '—'}</div>`;
     $('#shopItems').innerHTML = `<div class="capsules">${cards}</div>${empty}<div class="shop-foot">${reroll}<span class="wallet">💰 ${you.credits}</span></div>${owned}`;
+  }
+
+  // Vote du prochain mini-jeu : trois cartes, la majorité l'emporte.
+  renderPick(m) {
+    const el = $('#pick');
+    const show = m.phase === 'pick' && !!m.pick;
+    el.hidden = !show;
+    document.body.classList.toggle('pick-on', show);
+    if (!show) { this.pickMine = null; this.pickKey = ''; return; }
+    const votes = m.pick.votes;
+    const optKey = m.pick.options.map((o) => o.id).join('|') + m.round;
+    if (optKey !== this.pickOptKey) { this.pickOptKey = optKey; this.pickMine = null; }
+    const mine = votes[this.youId] ?? this.pickMine ?? null;
+    const key = JSON.stringify([m.pick.options.map((o) => o.id), votes, mine, Math.ceil(m.timeLeft ?? 0)]);
+    if (key === this.pickKey) return;
+    this.pickKey = key;
+    const cards = m.pick.options.map((o, i) => {
+      const voters = Object.entries(votes).filter(([, v]) => v === i).map(([id]) => this.roster.get(id));
+      const dots = voters.map((r) => `<span class="dot" style="background:${r?.color ?? '#999'}" title="${esc(r?.name ?? '')}"></span>`).join('');
+      return `<button class="pick-card ${o.id === 'micro' ? 'rafale' : ''} ${mine === i ? 'picked' : ''}" data-pick="${i}">
+        <span class="ico">${GAME_ICON[o.id] ?? '🎲'}</span>
+        <span class="title">${esc(o.name)}</span>
+        <span class="desc">${esc(o.description)}</span>
+        <span class="votes">${dots || '<i>aucun vote</i>'}</span>
+      </button>`;
+    }).join('');
+    const melee = m.round === 1 || m.round === m.rounds;
+    el.innerHTML = `<h2>🗳️ Manche ${m.round}/${m.rounds} : à vous de choisir !</h2>
+      <div class="pick-cards">${cards}</div>
+      <p class="note">⏱ ${Math.ceil(m.timeLeft ?? 0)} s · majorité, égalité tirée au sort${melee ? ' · 🎱 Mêlée après cette manche' : ''}</p>`;
   }
 
   // Réunion de l'imposteur : on vote pour éjecter quelqu'un (ou on passe).

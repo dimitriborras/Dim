@@ -165,6 +165,9 @@ export class GameRoom {
         this.match.recordShop(p, res, msg.item);
         break;
       }
+      case 'pick':
+        this.match.votePick(p, msg.i);
+        break;
       case 'reroll':
         this.match.recordShop(p, this.match.reroll(p), null);
         break;

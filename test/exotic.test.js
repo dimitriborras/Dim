@@ -83,15 +83,17 @@ test('Vingt-et-un : la carte d\'arrivée s\'ajoute, au-delà de 21 c\'est perdu,
   for (const [, s] of mg.state) assert.ok(s.busted || s.total <= 21);
 });
 
-test('Le match pioche dans tous les mini-jeux de palet', () => {
+test('Le vote propose peu à peu tous les gros mini-jeux', () => {
   const room = new GameRoom({ code: 'PL', seed: 2 });
   room.join({ send() {} }, { name: 'H' });
   room.addBot();
+  room.match.start(8);
   const seen = new Set();
-  for (let i = 0; i < 25; i++) {
-    room.match.start(8);
-    for (const id of room.match.plan) seen.add(id);
-    room.match.enterLobby();
+  for (let i = 0; i < 12; i++) {
+    for (const id of room.match.pick.options) seen.add(id);
+    room.match.endPick();
+    room.match.round += 1;
+    room.match.enterPick();
   }
-  for (const id of ['bomb', 'tiles', 'blackjack', 'palet', 'glutton', 'memory', 'king', 'mine', 'movers', 'impostor']) assert.ok(seen.has(id), `${id} au programme`);
+  for (const id of ['bomb', 'tiles', 'blackjack', 'palet', 'glutton', 'memory', 'king', 'mine', 'movers', 'impostor', 'race', 'coins']) assert.ok(seen.has(id), `${id} proposé`);
 });

@@ -46,6 +46,7 @@ export const HAZARD = {
 };
 
 export const PHASES = {
+  pick: 12, // vote du prochain mini-jeu
   intro: 4,
   rewards: 14, // résultats + Distributeur
   combat: 40, // la Mêlée sur le billard

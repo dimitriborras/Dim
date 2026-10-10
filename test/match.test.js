@@ -19,12 +19,12 @@ test('une partie complète de 4 joueurs se termine seule et revient au lobby', (
   for (let i = 0; i < 3; i++) room.addBot();
   room.settings.rounds = 3;
   room.handle(me.id, { t: 'start' });
-  assert.equal(room.match.phase, 'intro');
+  assert.equal(room.match.phase, 'pick');
 
   const seen = new Set();
   const ok = runUntil(room, () => { seen.add(room.match.phase); return seen.has('final') && room.match.phase === 'lobby'; });
   assert.ok(ok, 'la partie doit revenir au lobby');
-  for (const ph of ['intro', 'minigame', 'rewards', 'combat', 'lastShop', 'finaleIntro', 'finale', 'final', 'lobby']) {
+  for (const ph of ['pick', 'intro', 'minigame', 'rewards', 'combat', 'lastShop', 'finaleIntro', 'finale', 'final', 'lobby']) {
     assert.ok(seen.has(ph), `phase ${ph} jouée`);
   }
   const standings = snaps.at(-1).m.standings;
@@ -75,7 +75,7 @@ test('seul l\'hôte lance la partie ; départ de l\'hôte = migration', () => {
   room.handle(b.id, { t: 'start' });
   assert.equal(room.match.phase, 'lobby');
   room.handle(a.id, { t: 'start' });
-  assert.equal(room.match.phase, 'intro');
+  assert.equal(room.match.phase, 'pick');
   room.leave(a.id);
   assert.equal(room.hostId, b.id);
   assert.ok(room.players.has(a.id), 'conservé au classement pendant la partie');
@@ -108,4 +108,33 @@ test('reconnexion avec jeton pendant la partie', () => {
   assert.ok(room2.match.world.players.includes(x));
   for (let i = 0; i < 200; i++) room2.tick(DT);
   assert.ok(welcome && y);
+});
+
+test('vote : deux gros mini-jeux et La Rafale, la majorité choisit ; Mêlée seulement au début et à la fin', () => {
+  const room = new GameRoom({ code: 'VO', seed: 4 });
+  const me = room.join({ send() {} }, { name: 'H' }).player;
+  for (let i = 0; i < 3; i++) room.addBot();
+  room.settings.rounds = 5;
+  room.handle(me.id, { t: 'start' });
+  const m = room.match;
+  assert.equal(m.phase, 'pick');
+  assert.equal(m.pick.options.length, 3);
+  assert.equal(m.pick.options[2], 'micro', 'La Rafale toujours proposée');
+  assert.ok(m.pick.options.slice(0, 2).every((id) => id !== 'micro'), 'deux gros mini-jeux');
+  // Les bots votent comme moi : le choix passe.
+  for (const p of m.participants()) room.handle(p.id, { t: 'pick', i: 0 });
+  for (const p of m.participants()) if (p.bot) m.votePick(p, 0);
+  const wanted = m.pick.options[0];
+  runUntil(room, () => m.phase === 'intro');
+  assert.equal(m.plan[0], wanted, 'le mini-jeu voté est joué');
+  assert.equal(m.minigame.constructor.id, wanted);
+  assert.equal(parseClientMessage({ t: 'pick', i: 7 }), null);
+  // Suivre la partie : la Mêlée n'a lieu qu'après la 1re et la 5e manche.
+  const melees = [];
+  let last = m.phase;
+  runUntil(room, () => {
+    if (m.phase !== last) { if (m.phase === 'combat') melees.push(m.round); last = m.phase; }
+    return m.phase === 'finaleIntro';
+  });
+  assert.deepEqual(melees, [1, 5]);
 });

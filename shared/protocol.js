@@ -45,6 +45,8 @@ export function parseClientMessage(raw) {
     case 'buy':
       if (typeof msg.item !== 'string' || !Object.hasOwn(ITEMS, msg.item)) return null;
       return { t: 'buy', item: msg.item };
+    case 'pick':
+      return Number.isInteger(msg.i) && msg.i >= 0 && msg.i <= 2 ? { t: 'pick', i: msg.i } : null;
     case 'reroll':
     case 'start':
     case 'addBot':

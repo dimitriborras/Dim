@@ -5,6 +5,13 @@ import { GameRoom } from '../shared/game/GameRoom.js';
 import { createRng } from '../shared/rng.js';
 import { DT } from '../shared/constants.js';
 
+// Lance directement une Rafale (sans passer par le vote du mini-jeu).
+function startRafale(room, rounds = 1) {
+  room.match.start(rounds);
+  room.match.plan = ['micro'];
+  room.match.enterIntro();
+}
+
 const P = (id) => ({ id, state: 'alive', x: 0, y: 0 });
 
 // Le geste idéal pour chaque micro-jeu non physique.
@@ -106,9 +113,7 @@ test('La Rafale se déroule en entier et classe aux micro-jeux réussis', () => 
   const room = new GameRoom({ code: 'MR', seed: 12 });
   room.join({ send() {} }, { name: 'H' });
   for (let i = 0; i < 4; i++) room.addBot();
-  room.match.start(1);
-  room.match.plan = ['micro'];
-  room.match.enterIntro();
+  startRafale(room);
   const mg = room.match.minigame;
   assert.equal(mg.sequence.length, 10);
   assert.ok(mg.sequence.filter((id) => MICRO_BY_ID.get(id).physics).length >= 2, 'au moins deux micro-jeux physiques');
@@ -151,7 +156,7 @@ test('séquence de la Rafale : rampe de difficulté, capacités alternées, paus
   const room = new GameRoom({ code: 'SQ', seed: 3 });
   room.join({ send() {} }, { name: 'H' });
   room.addBot();
-  room.match.start(3);
+  startRafale(room, 3);
   const memory = new Set();
   const mg = room.match.minigame;
   for (let seed = 1; seed <= 30; seed++) {
@@ -172,18 +177,6 @@ test('séquence de la Rafale : rampe de difficulté, capacités alternées, paus
   assert.ok(simpleRepeats <= 3, `peu de répétitions entre rafales (${simpleRepeats})`);
 });
 
-test('le match alterne La Rafale et les mini-jeux de palet', () => {
-  const room = new GameRoom({ code: 'AL', seed: 9 });
-  room.join({ send() {} }, { name: 'H' });
-  room.addBot();
-  room.match.start(5);
-  const plan = room.match.plan;
-  assert.equal(plan.length, 5);
-  assert.deepEqual(plan.filter((_, i) => i % 2 === 0), ['micro', 'micro', 'micro']);
-  assert.ok(plan.filter((_, i) => i % 2 === 1).every((id) => id !== 'micro'));
-  assert.notEqual(plan[1], plan[3], 'deux mini-jeux de palet différents');
-});
-
 test('mini-golf : le trou fait gagner, les bots savent viser', () => {
   let holed = 0;
   let total = 0;
@@ -191,8 +184,7 @@ test('mini-golf : le trou fait gagner, les bots savent viser', () => {
     const room = new GameRoom({ code: 'GO' + seed, seed });
     room.join({ send() {} }, { name: 'H' });
     for (let i = 0; i < 5; i++) room.addBot();
-    room.match.start(1);
-    room.match.enterIntro();
+    startRafale(room);
     const mg = room.match.minigame;
     mg.sequence = ['golf'];
     while (room.match.phase === 'intro') room.tick(DT);
@@ -248,7 +240,7 @@ test('La Rafale apparie les joueurs pour les duels (fantôme si impair)', () => 
   const room = new GameRoom({ code: 'DU', seed: 4 });
   room.join({ send() {} }, { name: 'H' });
   for (let i = 0; i < 2; i++) room.addBot();
-  room.match.start(1);
+  startRafale(room);
   const mg = room.match.minigame;
   assert.ok(mg.sequence.some((id) => MICRO_BY_ID.get(id).duel), 'au moins un duel par rafale');
   mg.sequence = ['tug'];
@@ -319,7 +311,7 @@ test('duels physiques : chacun son îlot, le survivant le plus au centre gagne',
     const room = new GameRoom({ code: 'IS', seed: 6 });
     room.join({ send() {} }, { name: 'H' });
     for (let i = 0; i < 4; i++) room.addBot(); // 5 joueurs : un duo et un trio
-    room.match.start(1);
+    startRafale(room);
     const mg = room.match.minigame;
     mg.sequence = [id];
     while (mg.phase !== 'play') room.tick(DT);

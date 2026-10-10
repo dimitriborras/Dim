@@ -90,12 +90,13 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
 
 ## Boucle de partie
 
-`lobby (billard libre)` → pour chaque manche : `présentation (4 s)` → `mini-jeu` →
-`résultats + Distributeur (14 s)` → `Mêlée (40 s)` → `bilan (4 s)` → … → `finale (75 s)` →
-`classement final (15 s)` → retour au lobby.
+`lobby (billard libre)` → pour chaque manche : `vote du mini-jeu (12 s)` → `présentation (4 s)` → `mini-jeu` →
+`résultats + Distributeur (14 s)` → `Mêlée (40 s) + bilan`, seulement après la 1re et la dernière manche → … →
+`finale (75 s)` → `classement final (15 s)` → retour au lobby.
 
-- **Ordre des manches** : La Rafale ouvre la partie (gestes simples pour découvrir), puis on alterne
-  avec les mini-jeux à la physique de palet, sans répéter le même, puis la finale.
+- **Vote du mini-jeu** : avant chaque manche, trois cartes : deux « gros » mini-jeux (tirés sans répétition
+  dans le match) et La Rafale. Chacun touche sa carte, la majorité l'emporte (égalité : tirage au sort) ; le vote
+  se termine dès que tous les humains ont voté. Les bots votent au hasard.
 - **La Rafale (micro-jeux à la WarioWare)** : 10 micro-jeux de quelques secondes joués par tous en même temps.
   Chacun sollicite une capacité, annoncée avec son niveau (★ à ★★★) :
   - ⚡ réflexe : *Dégaine !*, *Tape les taupes !* (jamais la bombe) ;
@@ -158,7 +159,8 @@ ouverte, alors que le serveur de jeu doit tourner en continu (30 calculs par sec
     révélés seulement en réunion. Un corps signalé déclenche une réunion et un vote d'éjection. L'équipage gagne
     en finissant les tâches ou en éjectant l'imposteur ; l'imposteur s'il égale l'équipage ou tient jusqu'au bout.
 - **Finale** : *La couronne* — temps de possession ; un « Carton ! » sur le porteur la lui vole.
-- **La Mêlée** (remplace l'ancien combat au pistolet) : 40 s sur le billard, gadgets autorisés. Empocher un
+- **La Mêlée** (remplace l'ancien combat au pistolet) : deux par partie (après la première et la dernière
+  manche), 40 s sur le billard, gadgets autorisés. Empocher un
   adversaire : 3 pts (puis 1 et 0 sur la même victime) ; Carton : +1 ; boule numérotée empochée : +1 (3 au plus) ;
   jamais tombé : +2.
 - **Champion** : le vainqueur du mini-jeu reçoit une bouée gratuite, mais une prime (+2 pts, +30 crédits)

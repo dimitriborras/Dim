@@ -142,27 +142,64 @@ export class MatchManager {
     }
     this.rounds = rounds;
     this.round = 1;
-    this.plan = this.matchPlan(rounds);
+    this.plan = [];
+    this.bigBag = [];
     this.microMemory = new Set();
     this.lastResults = null;
     this.standings = null;
-    this.enterIntro();
+    this.createWorld({ map: ARENA, rules: SAFE_RULES, hooks: {} });
+    this.enterPick();
     return true;
   }
 
-  // Séquence du match : La Rafale (gestes simples, idéale pour découvrir) ouvre la partie,
-  // puis on alterne avec les mini-jeux à la physique de palet, sans répéter le même deux fois.
-  matchPlan(rounds) {
-    if (!this.registry.get('micro')) return this.registry.plan(rounds, this.rng);
-    const physical = this.registry.list().map((m) => m.id).filter((id) => id !== 'micro');
-    const plan = [];
-    let bag = [];
-    for (let i = 0; i < rounds; i++) {
-      if (i % 2 === 0 || !physical.length) { plan.push('micro'); continue; }
-      if (!bag.length) bag = this.rng.shuffle(physical);
-      plan.push(bag.shift());
+  // ------------------------------------------------------------ vote du prochain mini-jeu
+  // Avant chaque manche : deux « gros » mini-jeux (tirés sans répétition dans le match) et La Rafale.
+  // Chacun vote ; la majorité l'emporte (égalité : tirage au sort). Fin anticipée si tous les
+  // humains ont voté.
+  enterPick() {
+    const big = this.registry.list().map((m) => m.id).filter((id) => id !== 'micro');
+    const options = [];
+    while (options.length < 2 && big.length) {
+      if (!this.bigBag.length) this.bigBag = this.rng.shuffle(big);
+      const id = this.bigBag.shift();
+      if (!options.includes(id) && id !== this.plan[this.round - 2]) options.push(id);
     }
-    return plan;
+    if (this.registry.get('micro')) options.push('micro');
+    // Les bots votent après un petit temps de réflexion.
+    const botAt = new Map(this.participants().filter((p) => p.bot).map((p) => [p.id, this.time + this.rng.range(1.5, 6)]));
+    this.pick = { options, votes: new Map(), botAt };
+    this.setPhase('pick', PHASES.pick);
+  }
+
+  votePick(p, i) {
+    if (this.phase !== 'pick' || !p.inMatch || !Number.isInteger(i) || i < 0 || i >= this.pick.options.length) return;
+    this.pick.votes.set(p.id, i);
+    this.emit('pickVote', { id: p.id, i });
+  }
+
+  endPick() {
+    const { options, votes } = this.pick;
+    const count = options.map((_, i) => [...votes.values()].filter((v) => v === i).length);
+    const max = Math.max(...count);
+    const top = options.map((_, i) => i).filter((i) => count[i] === max);
+    const chosen = options[this.rng.pick(top)];
+    // Les gros mini-jeux non choisis retournent dans le sac pour une prochaine fois.
+    for (const id of options) if (id !== chosen && id !== 'micro') this.bigBag.push(id);
+    this.plan[this.round - 1] = chosen;
+    this.emit('picked', { id: chosen, votes: count });
+    this.enterIntro();
+  }
+
+  // Après le Distributeur : Mêlée seulement après la première et la dernière manche.
+  afterRewards() {
+    if (this.round === 1 || this.round === this.rounds) return this.enterCombat();
+    return this.nextRound();
+  }
+
+  nextRound() {
+    this.round += 1;
+    if (this.round > this.rounds) return this.enterIntro(); // finale
+    return this.enterPick();
   }
 
   // ------------------------------------------------------------ mini-jeux
@@ -349,6 +386,14 @@ export class MatchManager {
       if (cap !== null && cap !== undefined) this.phaseEnd = Math.min(this.phaseEnd, cap);
     }
 
+    if (this.phase === 'pick') {
+      for (const [id, at] of this.pick.botAt ?? []) {
+        const p = this.room.players.get(id);
+        if (p && this.time >= at && !this.pick.votes.has(id)) this.votePick(p, Math.floor(this.rng.next() * this.pick.options.length));
+      }
+      const humans = this.active().filter((p) => !p.bot);
+      if (humans.length && humans.every((p) => this.pick.votes.has(p.id)) && this.time < this.phaseEnd - 1.5) this.phaseEnd = this.time + 1.5;
+    }
     if (this.time >= this.phaseEnd || ((this.phase === 'minigame' || this.phase === 'finale') && this.minigame.isOver())) {
       this.advance();
     }
@@ -367,13 +412,14 @@ export class MatchManager {
       case 'minigame':
       case 'finale':
         return this.endMinigame();
+      case 'pick':
+        return this.endPick();
       case 'rewards':
-        return this.enterCombat();
+        return this.afterRewards();
       case 'combat':
         return this.endCombat();
       case 'lastShop':
-        this.round += 1;
-        return this.enterIntro();
+        return this.nextRound();
       case 'final':
         return this.enterLobby();
       default:
@@ -421,6 +467,11 @@ export class MatchManager {
       results: this.phase === 'rewards' || this.phase === 'final' ? this.lastResults : null,
       standings: this.phase === 'final' ? this.standings : null,
       shop: this.shopMode(),
+      pick: this.phase === 'pick' ? {
+        options: this.pick.options.map((id) => { const M = this.registry.get(id); return { id, name: M.name, description: M.description }; }),
+        votes: Object.fromEntries(this.pick.votes),
+      } : null,
+      melee: { first: 1, last: this.rounds },
       map: this.world.map.id,
     };
   }
