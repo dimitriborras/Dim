@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1b2340">
+  <title>PLASTIC PANIC</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- Écran d'accueil -->
+  <section id="menu" class="screen">
+    <div class="menu-card">
+      <h1 class="logo">PLASTIC<span>PANIC</span></h1>
+      <p class="tagline">Figurines en plastique, gadgets farfelus et chaos physique — 2 à 8 joueurs.</p>
+      <label class="field">Votre pseudo
+        <input id="name" maxlength="16" autocomplete="nickname" placeholder="Figurine">
+      </label>
+      <div class="menu-actions">
+        <button id="btnCreate" class="btn primary">Créer une salle</button>
+        <div class="join-row">
+          <input id="code" maxlength="4" placeholder="CODE" autocapitalize="characters" autocomplete="off">
+          <button id="btnJoin" class="btn">Rejoindre</button>
+        </div>
+        <button id="btnSolo" class="btn ghost">Entraînement solo contre des bots (hors ligne)</button>
+      </div>
+      <p id="menuError" class="error" role="alert"></p>
+      <details class="controls">
+        <summary>Commandes</summary>
+        <div class="controls-grid">
+          <div><b>Un seul doigt</b><br>
+            Pose le doigt n'importe où, tire en arrière, relâche : ta figurine part comme une bille.<br>
+            Percute les autres pour les pousser dans les poches ou hors du bureau.<br>
+            Petite tape : petit bond.
+          </div>
+          <div><b>Entre les manches</b><br>
+            Le Distributeur te propose 3 capsules : des atouts pour ta figurine (plus lourde, plus de charges…) et un gadget.<br>
+            Bouton rond : ton gadget (pétard, aimant, bulle…).<br>
+            Joue en vertical ou en paysage, à la souris sur PC.
+          </div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- Interface de jeu -->
+  <!-- Micro-jeux (La Rafale) -->
+  <section id="micro" hidden aria-live="polite"></section>
+
+  <section id="hud" hidden>
+    <div id="topbar">
+      <div id="round"></div>
+      <div id="phase"></div>
+      <div id="timer"></div>
+    </div>
+    <div id="scoreboard"></div>
+    <div id="feed"></div>
+    <div id="contract" hidden></div>
+    <div id="minihud"></div>
+    <div id="center"></div>
+    <div id="lobby" hidden></div>
+    <div id="bottom">
+      <div id="wallet"></div>
+      <div id="gear" title="Tes atouts"></div>
+      <button id="itemBtn" class="item-btn" aria-label="Utiliser le gadget (E ou Espace)"><span class="ico">·</span><i class="ring"></i></button>
+      <button id="shopBtn" class="btn small">🎰<span class="lbl"> Distributeur</span></button>
+    </div>
+    <div id="shop" hidden>
+      <header>
+        <h2>🎰 Le Distributeur</h2>
+        <span id="shopMode"></span>
+        <button id="shopClose" class="btn small ghost" aria-label="Fermer">✕</button>
+      </header>
+      <div id="shopItems"></div>
+    </div>
+    <div id="vote" hidden></div>
+    <div id="pick" hidden></div>
+    <div id="fullTable" hidden></div>
+    <div id="toast"></div>
+    <div id="announce" aria-live="polite"></div>
+    <div id="netinfo"></div>
+    <button id="settingsBtn" class="btn small ghost" aria-label="Réglages">⚙️</button>
+    <div id="settingsPanel" hidden>
+      <header><h2>Réglages</h2><button id="settingsClose" class="btn small ghost" aria-label="Fermer">✕</button></header>
+      <label class="opt"><input type="checkbox" id="setHaptics"> Vibrations</label>
+      <label class="opt">Tremblements de l'écran
+        <select id="setShake"><option value="0">Aucun</option><option value="0.5">Légers</option><option value="1">Normaux</option></select>
+      </label>
+      <label class="opt">Volume <input type="range" id="setVolume" min="0" max="1" step="0.1"></label>
+      <details class="controls" open>
+        <summary>Commandes</summary>
+        <div class="controls-grid">
+          <div><b>Un seul doigt (ou la souris)</b><br>Poser n'importe où, tirer en arrière, relâcher : pichenette<br>Petite tape : petit bond vers ce point<br>Bouton rond : utiliser ton gadget</div>
+          <div><b>Clavier / manette</b><br>E ou Espace : gadget — B : distributeur — Tab : scores<br>Manette : stick gauche pour viser, A maintenu puis relâché pour la pichenette, B : gadget</div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# Déploiement en un clic sur Render (offre gratuite, WebSocket supportés).
+# https://render.com/deploy?repo=https://github.com/dimitriborras/Dim
+services:
+  - type: web
+    name: plastic-panic
+    runtime: node
+    plan: free
+    region: frankfurt # proche de la France : ~20-40 ms au lieu de ~150 ms depuis l'Oregon
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
